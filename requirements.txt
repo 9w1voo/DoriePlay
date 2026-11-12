@@ -1,0 +1,4 @@
+spotipy>=2.25,<3
+google-api-python-client>=2.170,<3
+google-auth-oauthlib>=1.2,<2
+requests>=2.31,<3

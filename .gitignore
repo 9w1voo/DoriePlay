@@ -1,0 +1,15 @@
+.venv/
+*token*
+google-client.json
+soundcloud-client.json
+plan*.json
+# plans can have any name (sc2sp.json), and every JSON here is a key, a token or a plan
+*.json
+!*.example.json
+*.json.tmp
+__pycache__/
+plans/
+# personal project notes for the AI assistant: kept locally, not published
+CLAUDE.md
+.claude/
+.DS_Store

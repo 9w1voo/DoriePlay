@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" data-theme="studio">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="dorie-token" content="__TOKEN__">
+  <title>Dorie Play</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/i18n.js"></script>
+  <script src="/app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#/"><span class="brand-mark" aria-hidden="true"></span>Dorie Play</a>
+    <div class="top-right">
+      <select class="lang" id="lang"></select>
+      <div class="themes" id="themes" role="group"></div>
+    </div>
+  </header>
+  <main id="view" class="view"></main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="confirm" class="dialog"></dialog>
+</body>
+</html>
