@@ -131,10 +131,11 @@ python songbase.py serve                                    # http://127.0.0.1:8
 DORIEPLAY_SONGBASE=http://127.0.0.1:8771 python server.py
 ```
 
-Only the title, artists and length of each song are sent to the base. A song is taken from it only when
-one of its videos is a confident match; such candidates are marked "from Discogs, not a YouTube search",
-and otherwise YouTube is searched as before. The base server writes no logs. Videos linked on Discogs
-may have been deleted since: use **Check the videos** on the plan.
+Only the title, artists and length of each song are sent to the base. Many videos linked on Discogs have
+been deleted or blocked since, so the base's videos are first checked with YouTube (1 quota unit, not a
+search). A song is taken from the base only when one of its playable videos is a confident match; such
+candidates are marked "from Discogs, not a YouTube search", and otherwise YouTube is searched as before.
+The base server writes no logs.
 
 ## Your data
 

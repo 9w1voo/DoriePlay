@@ -115,9 +115,11 @@ class Client(Base):
 
 
 class Plan(Base):
-    def test_songs_from_the_base_cost_no_youtube_search(self):
-        searched = []
-        fake = types.SimpleNamespace(NAME='youtube', LABEL='YouTube', search=lambda t: searched.append(t['title']) or [])
+    def plan(self, dead=()):
+        """Plans two pasted songs to a fake YouTube on which the ids in `dead` no longer play."""
+        searched, checked = [], []
+        fake = types.SimpleNamespace(NAME='youtube', LABEL='YouTube', search=lambda t: searched.append(t['title']) or [],
+                                     unavailable=lambda ids: checked.append(ids) or set(dead) & set(ids))
         cache = mock.patch.object(dorieplay, 'CACHE', self.folder / 'cache.json')
         cache.start()
         self.addCleanup(cache.stop)
@@ -127,8 +129,17 @@ class Plan(Base):
                 mock.patch.dict(os.environ, {'DORIEPLAY_SONGBASE': self.start_server()}), \
                 contextlib.redirect_stdout(io.StringIO()):
             dorieplay.make_plan(args)
-        tracks = dorieplay.load(args.plan)['tracks']
+        return dorieplay.load(args.plan)['tracks'], searched, checked
+
+    def test_songs_from_the_base_cost_no_youtube_search(self):
+        tracks, searched, checked = self.plan()
         self.assertEqual(searched, ['Unknown song'])
+        self.assertEqual(checked, [['aaaaaaaaaaa', 'bbbbbbbbbbb']])   # only songs the base knows are checked
         self.assertEqual((tracks[0]['approved'], tracks[0]['match_id'], tracks[0]['candidates'][0]['source']),
                          (True, 'aaaaaaaaaaa', 'discogs'))
         self.assertFalse(tracks[1]['approved'])
+
+    def test_a_dead_base_video_falls_back_to_a_youtube_search(self):
+        tracks, searched, _ = self.plan(dead={'aaaaaaaaaaa'})
+        self.assertEqual(searched, ['Мачо', 'Unknown song'])
+        self.assertNotIn('discogs', [c.get('source') for t in tracks for c in t['candidates']])

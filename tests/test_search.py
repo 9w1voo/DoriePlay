@@ -181,8 +181,9 @@ class PlatformSearch(unittest.TestCase):
         self.assertEqual((searches[0]['q'], searches[0]['maxResults']), ('Linkin Park Numb', 15))
         self.assertEqual((result[0]['seconds'], result[0]['topic']), (187, True))
 
-    def test_youtube_names_deleted_private_and_rejected_videos_in_one_cheap_call(self):
+    def test_youtube_names_deleted_private_rejected_and_blocked_videos_in_one_cheap_call(self):
         calls = []
+        public = {'privacyStatus': 'public', 'uploadStatus': 'processed'}
 
         class Api:
             def videos(self):
@@ -190,15 +191,23 @@ class PlatformSearch(unittest.TestCase):
 
             def list(self, **params):
                 calls.append(params)
-                items = [{'id': 'ok', 'status': {'privacyStatus': 'public', 'uploadStatus': 'processed'}},
+                items = [{'id': 'ok', 'status': public},
                          {'id': 'hidden', 'status': {'privacyStatus': 'private'}},
-                         {'id': 'bad', 'status': {'privacyStatus': 'public', 'uploadStatus': 'rejected'}}]
+                         {'id': 'bad', 'status': {'privacyStatus': 'public', 'uploadStatus': 'rejected'}},
+                         # a label takedown: still up, blocked in every country
+                         {'id': 'takedown', 'status': {'privacyStatus': 'unlisted', 'uploadStatus': 'processed'},
+                          'contentDetails': {'regionRestriction': {'blocked': ['C%03d' % n for n in range(249)]}}},
+                         {'id': 'nowhere', 'status': public, 'contentDetails': {'regionRestriction': {'allowed': []}}},
+                         {'id': 'some', 'status': public, 'contentDetails': {'regionRestriction': {'blocked': ['DE', 'RU']}}},
+                         {'id': 'few', 'status': public, 'contentDetails': {'regionRestriction': {'allowed': ['NL'] * 120}}}]
                 return types.SimpleNamespace(execute=lambda: {'items': items})   # 'deleted' is simply absent
 
         self.addCleanup(setattr, youtube, '_client', youtube._client)
         youtube._client = Api()
-        self.assertEqual(youtube.unavailable(['ok', 'hidden', 'deleted', 'bad', 'ok']), {'hidden', 'deleted', 'bad'})
-        self.assertEqual([(c['part'], c['id']) for c in calls], [('status', 'ok,hidden,deleted,bad')])
+        ids = ['ok', 'hidden', 'deleted', 'bad', 'ok', 'takedown', 'nowhere', 'some', 'few']
+        self.assertEqual(youtube.unavailable(ids), {'hidden', 'deleted', 'bad', 'takedown', 'nowhere'})
+        self.assertEqual([(c['part'], c['id']) for c in calls],
+                         [('status,contentDetails', 'ok,hidden,deleted,bad,takedown,nowhere,some,few')])
 
 
 class Cache(unittest.TestCase):

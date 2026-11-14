@@ -98,13 +98,24 @@ def _videos(ids, part='snippet,contentDetails'):
     return found
 
 
+def _plays_almost_nowhere(video):
+    # Label takedowns often leave a video up but blocked in every country (seen on 14 Nov 2026).
+    # shortcut: the user's country is unknown, so a video blocked in only some countries counts as playable;
+    # add a country setting if users report videos that are blocked where they live.
+    region = video.get('contentDetails', {}).get('regionRestriction', {})
+    plays_in = len(region['allowed']) if 'allowed' in region else 249 - len(region.get('blocked', []))
+    return plays_in < 10   # 249 = ISO 3166 country codes
+
+
 def unavailable(ids):
     """The ids among these that cannot be played any more: deleted (YouTube leaves them out of the
-    answer), private or rejected. 1 quota unit per 50; the answer is used at once and not stored."""
-    found = _videos(list(dict.fromkeys(ids)), part='status')
+    answer), private, rejected or blocked almost everywhere. 1 quota unit per 50; the answer is used at
+    once and not stored."""
+    found = _videos(list(dict.fromkeys(ids)), part='status,contentDetails')
     return {video for video in ids if video not in found
             or found[video].get('status', {}).get('privacyStatus') == 'private'
-            or found[video].get('status', {}).get('uploadStatus') in ('deleted', 'failed', 'rejected')}
+            or found[video].get('status', {}).get('uploadStatus') in ('deleted', 'failed', 'rejected')
+            or _plays_almost_nowhere(found[video])}
 
 
 # --- Source ---------------------------------------------------------------------------------------

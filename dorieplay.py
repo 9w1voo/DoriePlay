@@ -136,7 +136,13 @@ def make_plan(args, progress=None):
     for track in tracks[len(plan['tracks']):]:
         # A song the song base is sure about costs no YouTube search (100 a day for the whole app). Its
         # candidates are never mixed with YouTube's (policy III.C.5): either the base's or YouTube's.
-        candidates = songbase.confident(track, songbase.lookup(track))[:KEEP] if target.NAME == 'youtube' else []
+        candidates = []
+        if target.NAME == 'youtube':
+            found = songbase.lookup(track)
+            # Discogs links go stale (11 of 17 base picks for Ivan's songs were dead, 14 Nov 2026); the check
+            # costs 1 quota unit from the shared 10,000, not one of the 100 searches.
+            gone = target.unavailable([c['id'] for c in found]) if found else set()
+            candidates = songbase.confident(track, [c for c in found if c['id'] not in gone])[:KEEP]
         if candidates:
             print('   (found in the song base, no YouTube search)')
         else:
