@@ -23,7 +23,7 @@ function t(key, vars) {
 }
 
 const S = { state: null, plan: null, filter: null, open: new Set(), playing: new Map(), timer: null, target: null,
-            setup: null };
+            setup: null, link: '' };
 
 function el(tag, attrs, ...kids) {
   const node = document.createElement(tag);
@@ -162,12 +162,13 @@ function drawLanguages() {
 
 function home() {
   const input = el('input', { class: 'link-input', type: 'url', inputmode: 'url', autocomplete: 'off',
-    spellcheck: 'false', placeholder: 'https://open.spotify.com/playlist/…', 'aria-label': t('linkLabel') });
+    spellcheck: 'false', placeholder: 'https://open.spotify.com/playlist/…', 'aria-label': t('linkLabel'), value: S.link });
   const targets = el('div', { class: 'seg', role: 'group', 'aria-label': t('whereTo') });
   const hint = el('p', { class: 'hint' });
   const go = el('button', { class: 'btn primary big', type: 'submit', text: t('findSongs') });
 
   function drawTargets() {
+    S.link = input.value;   // kept when the page is redrawn (set-up panel, language)
     const source = sourceOf(input.value.trim());
     const allowed = S.state.platforms.filter(p => p.name !== source);
     if (!S.target || S.target === source) S.target = source ? allowed[0].name : null;
@@ -187,6 +188,7 @@ function home() {
     try {
       const job = await api('plans', { url: input.value.trim(), to: S.target });
       S.state.job = job;
+      S.link = '';
       location.hash = '#/plan/' + job.plan;
     } catch (error) { toast(error.message, true); go.disabled = false; }
   } },
