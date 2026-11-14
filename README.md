@@ -1,3 +1,5 @@
+<img src="web/logo.svg" alt="Dorie Play logo" width="96">
+
 # Dorie Play
 
 Move your playlists between **Spotify**, **YouTube** and **SoundCloud** — in any direction — and

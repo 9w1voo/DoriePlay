@@ -76,6 +76,7 @@ class Security(ServerCase):
         status, page = self.call('/', token=False)
         self.assertEqual(status, 200)
         self.assertIn(self.app.token, page)
+        self.assertEqual(self.call('/logo.svg', token=False)[0], 200)
         self.assertEqual(self.call('/api/state', token=False)[0], 403)
         self.assertEqual(self.call('/api/state', token='wrong')[0], 403)
         self.assertEqual(self.call('/api/plans', {'url': LINK}, token=False)[0], 403)
@@ -130,6 +131,25 @@ class Flow(ServerCase):
         dorieplay.save(self.app.path(first), saved)
         time.sleep(1.05)   # plan names carry the second they were made in
         self.assertNotEqual(self.planned(), first)
+
+    def test_check_names_the_songs_whose_video_is_gone_and_stores_nothing(self):
+        name = self.planned()
+        plan = self.call(f'/api/plans/{name}')[1]
+        chosen = [(i, t['match_id']) for i, t in enumerate(plan['tracks']) if t['approved'] and t['match_id']]
+        gone_index, gone_id = chosen[1]
+        platforms.PLATFORMS['youtube'].unavailable = lambda ids: {gone_id}
+        before = self.app.path(name).read_bytes()
+
+        self.assertEqual(self.call(f'/api/plans/{name}/check', {})[0], 200)
+        job = self.wait()
+        self.assertEqual((job['kind'], job['state'], job['total']), ('check', 'done', len(chosen)))
+        self.assertEqual(job['result']['unavailable'], [{'index': gone_index, 'id': gone_id}])
+        self.assertEqual(self.app.path(name).read_bytes(), before)   # YouTube's answer is not written down
+
+        saved = dorieplay.load(self.app.path(name))
+        saved['to'] = 'soundcloud'
+        dorieplay.save(self.app.path(name), saved)
+        self.assertEqual(self.call(f'/api/plans/{name}/check', {})[0], 400)
 
     def test_bad_requests_get_a_plain_answer(self):
         self.assertEqual(self.call('/api/plans', {'url': 'https://example.com/x'})[0], 400)

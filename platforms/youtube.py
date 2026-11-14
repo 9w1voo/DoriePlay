@@ -88,14 +88,23 @@ def _seconds(iso):
     return sum(int(n or 0) * m for n, m in zip(match.groups(), (86400, 3600, 60, 1))) if match else 0
 
 
-def _videos(ids):
+def _videos(ids, part='snippet,contentDetails'):
     """videos.list in chunks of 50 (1 quota unit each)."""
     found = {}
     for start in range(0, len(ids), 50):
         chunk = ids[start:start + 50]
-        response = client().videos().list(part='snippet,contentDetails', id=','.join(chunk)).execute()
+        response = client().videos().list(part=part, id=','.join(chunk)).execute()
         found.update({v['id']: v for v in response.get('items', [])})
     return found
+
+
+def unavailable(ids):
+    """The ids among these that cannot be played any more: deleted (YouTube leaves them out of the
+    answer), private or rejected. 1 quota unit per 50; the answer is used at once and not stored."""
+    found = _videos(list(dict.fromkeys(ids)), part='status')
+    return {video for video in ids if video not in found
+            or found[video].get('status', {}).get('privacyStatus') == 'private'
+            or found[video].get('status', {}).get('uploadStatus') in ('deleted', 'failed', 'rejected')}
 
 
 # --- Source ---------------------------------------------------------------------------------------

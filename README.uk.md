@@ -1,3 +1,5 @@
+<img src="web/logo.svg" alt="Логотип Dorie Play" width="96">
+
 # Dorie Play — перенесення плейлистів між платформами
 
 ![Екран перевірки: кожна пісня поруч зі знайденим збігом](docs/review.png)

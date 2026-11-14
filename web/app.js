@@ -3,15 +3,15 @@
    computer. Everything that comes from a music service (titles, names, links) is untrusted text:
    it is only ever put on the page with textContent, and links and players are allow-listed. */
 
-const THEMES = [['studio', 'themeStudio'], ['paper', 'themePaper'], ['electro', 'themeElectro']];
+const THEMES = [['glass', 'themeGlass'], ['glass-light', 'themeGlassLight']];
 const LANGS = Object.keys(window.I18N);   // English first: it is the default and the fallback
 const store = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
   set(key, value) { try { localStorage.setItem(key, value); } catch { /* private window */ } },
 };
-// Before the first paint, so the page does not flash in another look.
-document.documentElement.dataset.theme =
-  THEMES.some(([id]) => id === store.get('theme')) ? store.get('theme') : 'studio';
+// Before the first paint, so the page does not flash in another look. No choice yet: follow the system.
+document.documentElement.dataset.theme = THEMES.some(([id]) => id === store.get('theme')) ? store.get('theme')
+  : matchMedia('(prefers-color-scheme: light)').matches ? 'glass-light' : 'glass';
 
 let lang = LANGS.includes(store.get('lang')) ? store.get('lang') : 'en';
 document.documentElement.lang = lang;
@@ -235,16 +235,16 @@ function connectionsSection() {
 // --- Plan ------------------------------------------------------------------------------------------
 
 function jobCard(job) {
-  const searching = job.kind === 'plan';
+  const searching = job.kind === 'plan', checking = job.kind === 'check';
   const share = job.total ? Math.min(100, Math.round(100 * job.done / job.total)) : 0;
   if (job.state === 'error') {
     return el('div', { class: 'card job bad' },
-      el('h2', { text: searching ? t('searchStopped') : t('transferStopped') }),
+      el('h2', { text: searching ? t('searchStopped') : checking ? t('checkStopped') : t('transferStopped') }),
       el('p', { class: 'job-error', text: job.error }),
       el('p', { class: 'hint', text: t('savedHint') }));
   }
   return el('div', { class: 'card job' },
-    el('h2', { text: searching ? t('searching') : t('adding') }),
+    el('h2', { text: searching ? t('searching') : checking ? t('checking') : t('adding') }),
     el('div', { class: 'bar', role: 'progressbar', 'aria-valuenow': share, 'aria-valuemin': 0, 'aria-valuemax': 100 },
       el('span', { style: `width:${job.total ? share : 4}%` })),
     el('p', { class: job.total ? 'job-count' : 'job-wait', text: job.total ? t('xOfY', job)
@@ -266,7 +266,21 @@ function resultCard(job) {
       el('p', { class: 'hint', text: t('pickAnother') })));
 }
 
-function musicCard(ids) {
+async function startCheck() {
+  try { S.state.job = await api(`plans/${S.plan.name}/check`, {}); drawPlan(); poll(); }
+  catch (error) { toast(error.message, true); }
+}
+
+function openRow(index) {
+  S.filter = 'all';
+  S.open.add(index);
+  drawPlan();
+  const row = document.querySelectorAll('.rows .row')[index];
+  if (row) row.scrollIntoView({ block: 'center' });
+}
+
+/* gone: songs whose chosen video YouTube no longer has ([{index, id}]), or null before a check. */
+function musicCard(ids, gone) {
   const open = el('a', { class: 'btn primary', target: '_blank', rel: 'noopener noreferrer', hidden: true, text: t('ytmOpen') });
   const note = el('p', { class: 'hint' });
   const input = el('input', { class: 'link-input', type: 'url', inputmode: 'url', autocomplete: 'off',
@@ -283,6 +297,12 @@ function musicCard(ids) {
     el('h2', { text: t('ytmTitle') }),
     el('ol', { class: 'ytm-steps' }, el('li', { text: t('ytmStep1') }), el('li', { text: t('ytmStep2') }),
       el('li', { text: t('ytmStep3') })),
+    el('div', { class: 'ytm-check' },
+      el('button', { class: 'btn ghost', type: 'button', text: t('ytmCheck'), onclick: startCheck }),
+      gone && el('p', { class: 'hint', text: gone.length ? t('ytmGone', { count: gone.length }) : t('ytmAllOk') })),
+    gone && gone.length > 0 && el('ul', { class: 'ytm-gone' }, gone.map(({ index }) => el('li', {},
+      el('button', { class: 'link', type: 'button', onclick: () => openRow(index),
+        text: `${index + 1}. ${S.plan.tracks[index].title || '—'} — ${(S.plan.tracks[index].artists || []).join(', ')}` })))),
     el('div', { class: 'ytm-parts' }, parts.map((part, n) => el('a', { class: 'btn ghost', target: '_blank',
       rel: 'noopener noreferrer', href: 'https://www.youtube.com/watch_videos?video_ids=' + part.join(','),
       text: t('ytmPart', { n: n + 1, from: n * PART + 1, to: n * PART + part.length }) }))),
@@ -394,6 +414,10 @@ function drawPlan() {
   const rows = tracks.map((track, index) => shown.includes(statusOf(track)) ? trackRow(track, index) : null).filter(Boolean);
   const videoIds = S.plan.to === 'youtube'
     ? tracks.filter(track => ['auto', 'ok'].includes(statusOf(track))).map(videoIdOf).filter(Boolean) : [];
+  // A song the user has since changed or left out drops off the list of gone videos.
+  const gone = job && job.kind === 'check' && job.state === 'done' && job.result
+    ? job.result.unavailable.filter(({ index, id }) => tracks[index] && ['auto', 'ok'].includes(statusOf(tracks[index]))
+      && videoIdOf(tracks[index]) === id) : null;
 
   view.replaceChildren(el('div', { class: 'plan' }, back,
     el('header', { class: 'plan-head' },
@@ -411,7 +435,7 @@ function drawPlan() {
         t(key), el('span', { class: 'chip-count', text: statuses.reduce((sum, status) => sum + counts[status], 0) })))),
     el('div', { class: 'rows' }, rows.length ? rows
       : el('p', { class: 'empty-list', text: S.filter === 'ask' ? t('emptyAsk') : t('emptyOther') })),
-    videoIds.length > 0 && musicCard(videoIds),
+    videoIds.length > 0 && musicCard(videoIds, gone),
     el('div', { class: 'apply-bar' },
       el('span', { text: going ? t('barGoing', { to: label(S.plan.to), songs: songs(going) }) : t('barNone') }),
       S.plan.applied && safeLink(S.plan.target_url) && el('a', { class: 'btn ghost', href: safeLink(S.plan.target_url),

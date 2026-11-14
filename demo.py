@@ -85,6 +85,10 @@ class Fake:
             counts[item] = counts.get(item, 0) + 1
         return counts
 
+    def unavailable(self, ids):   # every demo video "exists"
+        time.sleep(self.delay)
+        return set()
+
     def add_items(self, playlist_id, items):
         for item, label in items:
             time.sleep(self.delay / 2)

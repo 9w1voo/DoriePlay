@@ -172,6 +172,25 @@ class PlatformSearch(unittest.TestCase):
         self.assertEqual((searches[0]['q'], searches[0]['maxResults']), ('Linkin Park Numb', 15))
         self.assertEqual((result[0]['seconds'], result[0]['topic']), (187, True))
 
+    def test_youtube_names_deleted_private_and_rejected_videos_in_one_cheap_call(self):
+        calls = []
+
+        class Api:
+            def videos(self):
+                return self
+
+            def list(self, **params):
+                calls.append(params)
+                items = [{'id': 'ok', 'status': {'privacyStatus': 'public', 'uploadStatus': 'processed'}},
+                         {'id': 'hidden', 'status': {'privacyStatus': 'private'}},
+                         {'id': 'bad', 'status': {'privacyStatus': 'public', 'uploadStatus': 'rejected'}}]
+                return types.SimpleNamespace(execute=lambda: {'items': items})   # 'deleted' is simply absent
+
+        self.addCleanup(setattr, youtube, '_client', youtube._client)
+        youtube._client = Api()
+        self.assertEqual(youtube.unavailable(['ok', 'hidden', 'deleted', 'bad', 'ok']), {'hidden', 'deleted', 'bad'})
+        self.assertEqual([(c['part'], c['id']) for c in calls], [('status', 'ok,hidden,deleted,bad')])
+
 
 class Cache(unittest.TestCase):
     def setUp(self):

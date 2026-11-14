@@ -28,7 +28,8 @@ import platforms
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / 'web'
 STATIC = {'/': ('index.html', 'text/html'), '/app.css': ('app.css', 'text/css'),
-          '/app.js': ('app.js', 'text/javascript'), '/i18n.js': ('i18n.js', 'text/javascript')}
+          '/app.js': ('app.js', 'text/javascript'), '/i18n.js': ('i18n.js', 'text/javascript'),
+          '/logo.svg': ('logo.svg', 'image/svg+xml')}
 PLAN_NAME = re.compile(r'[A-Za-z0-9_-]{1,60}')
 YOUTUBE_SEARCHES_PER_DAY = 100
 # Any web page can send requests to 127.0.0.1, and this server can change the user's playlists:
@@ -221,6 +222,32 @@ class App:
                 dorieplay.save(path, saved)
             return self.run('apply', name, work)
 
+    def start_check(self, name):
+        """Before an export to YouTube Music: ask YouTube which chosen videos are gone (1 quota unit
+        per 50). The answer lives only in the job, never in the plan file (YouTube's rules on API data)."""
+        with self.lock:
+            if self.busy():
+                raise ApiError(409, 'Another task is still running.')
+            plan = self.load(name)
+            if plan.get('to') != 'youtube':
+                raise ApiError(400, 'Only a plan to YouTube can be checked.')
+            target = platforms.get('youtube')
+            chosen = []
+            for index, track in enumerate(plan['tracks']):
+                if track.get('approved') and track.get('match_id'):
+                    with contextlib.suppress(ValueError):   # an unreadable hand-edited link: apply reports it
+                        chosen.append((index, dorieplay.chosen_id(track, target)))
+            if not chosen:
+                raise ApiError(400, 'No approved songs in this plan yet.')
+
+            def work(job):
+                job['total'] = len(chosen)
+                gone = target.unavailable([video for _, video in chosen])
+                job['done'] = len(chosen)
+                job['result'] = {'unavailable': [{'index': i, 'id': v} for i, v in chosen if v in gone]}
+                print(f'Checked {len(chosen)} videos, not available: {len(job["result"]["unavailable"])}.')
+            return self.run('check', name, work)
+
     def run(self, kind, name, work):
         job = self.job = {'kind': kind, 'plan': name, 'state': 'running', 'done': 0, 'total': 0,
                           'lines': [], 'error': '', 'result': None}
@@ -290,6 +317,8 @@ def make_handler(app, port):
                                                     body.get('match_id')))
                 if method == 'POST' and len(parts) == 3 and parts[0] == 'plans' and parts[2] == 'apply':
                     return self.reply(200, app.start_apply(parts[1]))
+                if method == 'POST' and len(parts) == 3 and parts[0] == 'plans' and parts[2] == 'check':
+                    return self.reply(200, app.start_check(parts[1]))
                 raise ApiError(404, 'Not found.')
             except ApiError as error:
                 self.reply(error.status, {'error': str(error)})
