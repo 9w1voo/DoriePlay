@@ -213,6 +213,9 @@ button { font: inherit; color: inherit; }
 .done { border-color: var(--ok); justify-items: start; }
 .skipped { display: grid; gap: 6px; }
 .skipped ul { margin: 0; padding-left: 20px; }
+.ytm { justify-items: start; }
+.ytm-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.ytm-parts { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 9; max-width: min(92vw, 560px); padding: 10px 16px; border-radius: var(--radius-s); background: var(--text); color: var(--bg); font-size: 0.92rem; box-shadow: 0 8px 30px rgb(0 0 0 / 0.3); }
 .toast.bad { background: var(--accent); color: var(--accent-ink); }

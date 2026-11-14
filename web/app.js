@@ -95,6 +95,32 @@ function playerUrl(platform, candidate) {
   return null;
 }
 
+/* Saving to YouTube without the API quota. www.youtube.com/watch_videos turns up to 50 video ids into a
+   temporary list (later ids are dropped, unavailable videos skipped); only YouTube Music has a Save
+   button for that list, and only once it exists, so the user brings us the address YouTube opened.
+   Undocumented by YouTube (checked by hand 14 Nov 2026): it may stop working. */
+const PART = 50;
+function videoIdOf(track) {   // match_id is an id or, hand-edited, a candidate's link (chosen_id in dorieplay.py)
+  const value = String(track.match_id || '').trim();
+  const candidate = (track.candidates || []).find(c => c.id === value || c.url === value);
+  const id = candidate ? candidate.id : value;
+  return /^[\w-]{11}$/.test(id) ? id : null;
+}
+/* youtube.com/watch?v=<id>&list=<list> (with or without https://, www., m., or as a youtu.be share link)
+   -> the same list on YouTube Music. The new link is rebuilt from the checked parts only. */
+function musicLink(text) {
+  try {
+    const raw = String(text).replace(/[​-‏⁠﻿]/g, '').trim();
+    const url = new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw);
+    const video = url.hostname === 'youtu.be' ? url.pathname.slice(1)
+      : url.pathname === '/watch' ? url.searchParams.get('v') || '' : '';
+    const list = url.searchParams.get('list') || '';
+    return /^((www|m|music)\.)?youtube\.com$|^youtu\.be$/.test(url.hostname) &&
+      /^[\w-]{11}$/.test(video) && /^[\w-]{10,80}$/.test(list)
+      ? `https://music.youtube.com/watch?v=${video}&list=${list}` : null;
+  } catch { return null; }
+}
+
 /* auto: approved by the program; ok: chosen by the user; ask: needs a decision;
    skip: the user left it out; none: nothing was found. */
 function statusOf(track) {
@@ -240,6 +266,30 @@ function resultCard(job) {
       el('p', { class: 'hint', text: t('pickAnother') })));
 }
 
+function musicCard(ids) {
+  const open = el('a', { class: 'btn primary', target: '_blank', rel: 'noopener noreferrer', hidden: true, text: t('ytmOpen') });
+  const note = el('p', { class: 'hint' });
+  const input = el('input', { class: 'link-input', type: 'url', inputmode: 'url', autocomplete: 'off',
+    placeholder: t('ytmPaste'), 'aria-label': t('ytmPaste'), oninput(event) {
+      const value = event.target.value.trim();
+      const link = value && musicLink(value);
+      open.hidden = !link;
+      if (link) open.href = link;
+      note.textContent = value && !link ? t('ytmBad') : '';
+    } });
+  const parts = [];
+  for (let start = 0; start < ids.length; start += PART) parts.push(ids.slice(start, start + PART));
+  return el('div', { class: 'card ytm' },
+    el('h2', { text: t('ytmTitle') }),
+    el('ol', { class: 'ytm-steps' }, el('li', { text: t('ytmStep1') }), el('li', { text: t('ytmStep2') }),
+      el('li', { text: t('ytmStep3') })),
+    el('div', { class: 'ytm-parts' }, parts.map((part, n) => el('a', { class: 'btn ghost', target: '_blank',
+      rel: 'noopener noreferrer', href: 'https://www.youtube.com/watch_videos?video_ids=' + part.join(','),
+      text: t('ytmPart', { n: n + 1, from: n * PART + 1, to: n * PART + part.length }) }))),
+    input, note, open,
+    el('p', { class: 'hint', text: t('ytmNote') }));
+}
+
 function candidateRow(index, track, candidate) {
   const chosen = track.approved && track.match_id === candidate.id;
   const platform = S.plan.to;
@@ -342,6 +392,8 @@ function drawPlan() {
   if (!S.filter) S.filter = counts.ask ? 'ask' : 'all';
   const shown = FILTERS.find(([id]) => id === S.filter)[2];
   const rows = tracks.map((track, index) => shown.includes(statusOf(track)) ? trackRow(track, index) : null).filter(Boolean);
+  const videoIds = S.plan.to === 'youtube'
+    ? tracks.filter(track => ['auto', 'ok'].includes(statusOf(track))).map(videoIdOf).filter(Boolean) : [];
 
   view.replaceChildren(el('div', { class: 'plan' }, back,
     el('header', { class: 'plan-head' },
@@ -359,6 +411,7 @@ function drawPlan() {
         t(key), el('span', { class: 'chip-count', text: statuses.reduce((sum, status) => sum + counts[status], 0) })))),
     el('div', { class: 'rows' }, rows.length ? rows
       : el('p', { class: 'empty-list', text: S.filter === 'ask' ? t('emptyAsk') : t('emptyOther') })),
+    videoIds.length > 0 && musicCard(videoIds),
     el('div', { class: 'apply-bar' },
       el('span', { text: going ? t('barGoing', { to: label(S.plan.to), songs: songs(going) }) : t('barNone') }),
       S.plan.applied && safeLink(S.plan.target_url) && el('a', { class: 'btn ghost', href: safeLink(S.plan.target_url),
