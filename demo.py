@@ -51,7 +51,7 @@ class Fake:
     def search(self, track):
         time.sleep(self.delay)
         title, artists, seconds = track['title'], track['artists'], track['duration_ms'] // 1000
-        lead, plain = artists[0], title.split(' (feat')[0].split(' - ')[0]
+        lead, plain = (artists or ['Unknown'])[0], title.split(' (feat')[0].split(' - ')[0]   # a pasted line may have no artist
 
         def hit(suffix, name, artist, length, topic=False):
             return {'id': f"demo-{self.NAME}-{track['source_id'][12:]}-{suffix}", 'title': name,

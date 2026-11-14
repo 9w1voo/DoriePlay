@@ -10,7 +10,7 @@
   MAX_PLAYLIST_TRACKS  optional: playlist size limit, checked before a playlist is created
 Adding a platform = adding a module here and to PLATFORMS.
 """
-from . import soundcloud, spotify, youtube
+from . import soundcloud, spotify, text, youtube
 
 PLATFORMS = {module.NAME: module for module in (spotify, youtube, soundcloud)}
 
@@ -22,7 +22,12 @@ def get(name):
 
 
 def detect(url):
+    if '\n' in url.strip():   # several lines: a pasted list of songs (platforms/text.py), whatever line 1 is
+        return text
     for module in PLATFORMS.values():
         if module.owns(url):
             return module
-    raise ValueError('Cannot tell the platform from this link. Use a Spotify, YouTube or SoundCloud playlist URL.')
+    if text.owns(url):
+        return text
+    raise ValueError('Cannot tell the platform from this link. Use a Spotify, YouTube or SoundCloud playlist URL '
+                     'or a list of songs.')

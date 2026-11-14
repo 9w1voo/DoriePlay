@@ -63,18 +63,20 @@ function toast(text, bad) {
 }
 
 const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
-const label = name => (S.state.platforms.find(p => p.name === name) || { label: name }).label;
+const label = name => name === 'text' ? t('songList') : (S.state.platforms.find(p => p.name === name) || { label: name }).label;
 function songs(count) {   // "1 song", "3 пісні", "5 песен": each language has its own plural rules
   const forms = window.I18N[lang].songs;
   return `${count} ${forms[new Intl.PluralRules(lang).select(count)] || forms.other}`;
 }
 
 function sourceOf(url) {
+  if (url.includes('\n')) return 'text';   // several lines: a list of songs (same rule as platforms.detect)
   if (/(^|\/\/|\.)spotify\.com\/|^spotify:/i.test(url)) return 'spotify';
   if (/(^|\/\/|\.)(youtube\.com|youtu\.be)\//i.test(url)) return 'youtube';
   if (/(^|\/\/|\.)soundcloud\.com\/|^soundcloud:/i.test(url)) return 'soundcloud';
-  return null;
+  return url && !url.includes('/') ? 'text' : null;
 }
+const listLines = text => text.split('\n').filter(line => line.trim() && !line.trim().startsWith('#')).length;
 
 function safeLink(url) {
   try {
@@ -161,14 +163,17 @@ function drawLanguages() {
 // --- Home ------------------------------------------------------------------------------------------
 
 function home() {
-  const input = el('input', { class: 'link-input', type: 'url', inputmode: 'url', autocomplete: 'off',
-    spellcheck: 'false', placeholder: 'https://open.spotify.com/playlist/…', 'aria-label': t('linkLabel'), value: S.link });
+  // A textarea, so a list of songs keeps its lines; it grows with the list.
+  const input = el('textarea', { class: 'link-input', rows: 1, autocomplete: 'off', spellcheck: 'false',
+    placeholder: t('linkPlaceholder'), 'aria-label': t('linkLabel'), text: S.link });
   const targets = el('div', { class: 'seg', role: 'group', 'aria-label': t('whereTo') });
   const hint = el('p', { class: 'hint' });
   const go = el('button', { class: 'btn primary big', type: 'submit', text: t('findSongs') });
 
   function drawTargets() {
     S.link = input.value;   // kept when the page is redrawn (set-up panel, language)
+    input.rows = Math.min(8, input.value.split('\n').length);
+    input.classList.toggle('multi', input.rows > 1);
     const source = sourceOf(input.value.trim());
     const allowed = S.state.platforms.filter(p => p.name !== source);
     if (!S.target || S.target === source) S.target = source ? allowed[0].name : null;
@@ -177,10 +182,17 @@ function home() {
       'aria-pressed': String(p.name === S.target), onclick() { S.target = p.name; drawTargets(); },
     })));
     hint.textContent = !input.value.trim() ? t('hintEmpty')
+      : source === 'text' ? t('hintText', { songs: songs(listLines(input.value)) })
       : source ? t('hintFrom', { from: label(source) }) : t('hintUnknown');
     go.disabled = !source || !S.target;
   }
   input.addEventListener('input', drawTargets);
+  input.addEventListener('keydown', event => {   // Enter starts the search for a link; in a list it is a new line
+    if (event.key === 'Enter' && !event.shiftKey && !['text', null].includes(sourceOf(input.value.trim()))) {
+      event.preventDefault();
+      if (!go.disabled) form.requestSubmit();
+    }
+  });
 
   const form = el('form', { class: 'start', async onsubmit(event) {
     event.preventDefault();
@@ -302,12 +314,16 @@ function jobCard(job) {
     el('p', { class: 'job-line', text: job.lines[job.lines.length - 1] || '' }));
 }
 
+// Spotify ignores "public: false" from apps and opens any playlist by its link (tested 14 Nov 2026).
+const spotifyNote = () => S.plan.to === 'spotify' && el('p', { class: 'hint', text: t('spotifyPublic') });
+
 function resultCard(job) {
   const result = job.result;
   const link = safeLink(result.url);
   return el('div', { class: 'card done' },
     el('h2', { text: t('done') }),
     el('p', { text: t('addedLine', result) }),
+    spotifyNote(),
     link ? el('a', { class: 'btn primary', href: link, target: '_blank', rel: 'noopener noreferrer', text: t('openPlaylist') })
          : S.state.demo && el('p', { class: 'hint', text: t('demoNoPlaylist') }),
     result.skipped.length > 0 && el('div', { class: 'skipped' },
@@ -365,7 +381,7 @@ function candidateRow(index, track, candidate) {
   const platform = S.plan.to;
   const frameUrl = playerUrl(platform, candidate);
   const link = safeLink(candidate.url);
-  const delta = candidate.seconds - Math.round((track.duration_ms || 0) / 1000);
+  const delta = track.duration_ms ? candidate.seconds - Math.round(track.duration_ms / 1000) : 0;   // lists may have no lengths
   const key = index + '/' + candidate.id;
   const slot = el('div', { class: 'player ' + platform });
   if (S.playing.get(index) === candidate.id && frameUrl) {
@@ -402,7 +418,7 @@ function trackRow(track, index) {
   } },
     el('span', { class: 'num', text: String(index + 1).padStart(2, '0') }),
     el('span', { class: 'src' }, el('b', { text: track.title || '—' }),
-      el('i', { text: `${(track.artists || []).join(', ') || '—'} · ${clock((track.duration_ms || 0) / 1000)}` })),
+      el('i', { text: `${(track.artists || []).join(', ') || '—'}` + (track.duration_ms ? ` · ${clock(track.duration_ms / 1000)}` : '') })),
     el('span', { class: 'arrow', 'aria-hidden': 'true', text: '→' }), right,
     el('span', { class: 'badge', text: t(STATUS_TEXT[status]) }));
   const details = open && el('div', { class: 'cands' },
@@ -432,8 +448,10 @@ function confirmApply(count) {
   const dialog = document.getElementById('confirm');
   dialog.replaceChildren(
     el('h2', { text: S.plan.applied ? t('addQ') : t('createQ') }),
-    el('p', { text: t(S.plan.applied ? 'addBody' : 'createBody',
-      { to: label(S.plan.to), title: S.plan.title, count }) }),
+    el('p', { text: S.plan.applied ? t('addBody', { to: label(S.plan.to), title: S.plan.title, count })
+      : S.plan.to === 'spotify' ? t('createBodySpotify', { title: S.plan.title, count })
+      : t('createBody', { to: label(S.plan.to), title: S.plan.title, count }) }),
+    !S.plan.applied && spotifyNote(),
     el('div', { class: 'dialog-actions' },
       el('button', { class: 'btn ghost', type: 'button', text: t('cancel'), onclick: () => dialog.close() }),
       el('button', { class: 'btn primary', type: 'button', text: t('yesTransfer'), async onclick() {
@@ -491,7 +509,7 @@ function drawPlan() {
       S.plan.applied && safeLink(S.plan.target_url) && el('a', { class: 'btn ghost', href: safeLink(S.plan.target_url),
         target: '_blank', rel: 'noopener noreferrer', text: t('playlistLink') }),
       el('button', { class: 'btn primary', type: 'button', disabled: !going,
-        text: S.plan.applied ? t('addNew') : t('createPrivate'),
+        text: S.plan.applied ? t('addNew') : S.plan.to === 'spotify' ? t('createPlaylist') : t('createPrivate'),
         onclick: () => confirmApply(going) }))));
 }
 

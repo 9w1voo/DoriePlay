@@ -8,7 +8,8 @@ check every song before anything is transferred.
 [Українською](README.uk.md)
 
 Dorie Play runs on your own computer. It first only *searches*; you review the matches; only then
-it creates a new **private** playlist from the songs you approved. Nothing is transferred blindly,
+it creates a new playlist from the songs you approved (private on YouTube and SoundCloud; Spotify makes
+playlists created by apps public, see below). Nothing is transferred blindly,
 and nothing is sent to anyone except the music services themselves.
 
 ![Review screen: each song next to its match, with the ones that need a decision on top](docs/review.png)
@@ -49,10 +50,14 @@ python server.py
 
 The page opens at `http://127.0.0.1:8765` and is reachable only from your computer.
 
-1. Paste a playlist link and choose where to transfer it.
+1. Paste a playlist link and choose where to transfer it. No access to the source playlist (for example,
+   Spotify without your own key)? Paste the songs instead, one per line as `Artist - Title`; a length at the
+   end (`3:45`) helps matching.
 2. Wait for the search. Confident matches are approved automatically.
 3. Review the songs that need a decision: listen, pick a candidate, or leave the song out.
-4. Press **Create private playlist** and confirm.
+4. Press **Create private playlist** (for Spotify: **Create playlist**) and confirm. Spotify ignores the
+   "private" setting from apps: anyone with the link can open the new playlist. To hide it, open it in
+   Spotify → ⋯ → **Make private**.
 
 The interface is available in English, Ukrainian, Dutch, Russian and Spanish.
 

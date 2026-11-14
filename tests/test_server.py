@@ -154,6 +154,18 @@ class Flow(ServerCase):
         dorieplay.save(self.app.path(name), saved)
         self.assertEqual(self.call(f'/api/plans/{name}/check', {})[0], 400)
 
+    def test_a_pasted_list_of_songs_is_searched_like_a_playlist(self):
+        songs = '\n'.join(f'Артист {n} - Пісня номер {n}' for n in range(1, 401))   # longer than a link may be
+        status, job = self.call('/api/plans', {'url': songs, 'to': 'youtube'})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.wait()['state'], 'done')
+        plan = self.call(f"/api/plans/{job['plan']}")[1]
+        self.assertEqual((plan['from'], plan['to'], len(plan['tracks'])), ('text', 'youtube', 400))
+        self.assertEqual(plan['tracks'][0]['artists'], ['Артист 1'])
+        self.assertTrue(plan['tracks'][0]['approved'])
+        self.assertEqual(self.call('/api/plans', {'url': 'Song - A\nhttps://open.spotify.com/track/1', 'to': 'youtube'})[0], 200)
+        self.assertIn('Line 2 is a link', self.wait()['error'])
+
     def test_bad_requests_get_a_plain_answer(self):
         self.assertEqual(self.call('/api/plans', {'url': 'https://example.com/x'})[0], 400)
         self.assertEqual(self.call('/api/plans', {'url': LINK, 'to': 'spotify'})[0], 400)

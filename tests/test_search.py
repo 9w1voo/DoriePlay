@@ -94,6 +94,15 @@ class Scoring(unittest.TestCase):
         self.assertTrue(sure)
         self.assertEqual(top['title'], 'Стыдно')
 
+    def test_a_song_from_a_pasted_list_without_length_is_judged_by_names(self):
+        pasted = song('Мачо', ['Zemfira'], 0)
+        top, sure = best(pasted, found('Земфира — Мачо (Official Video)', 'Земфира', 245))
+        self.assertTrue(sure)   # with a length check this scored 0.35: "wrong length" against 0 s
+        self.assertFalse(best(pasted, found('Земфира — Мачо (Live)', 'Земфира', 260))[1])
+        self.assertFalse(best(pasted, found('Мачо', 'Other Band', 245))[1])
+        album = found('Земфира - Мачо (весь альбом)', 'Земфира', 2900)
+        self.assertLess(rank(pasted, [album])[0]['score'], 0.5)   # still no hour-long albums
+
 
 class Queries(unittest.TestCase):
     def test_from_specific_to_general_without_repeats(self):

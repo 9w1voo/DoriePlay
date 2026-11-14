@@ -2,7 +2,7 @@
 
   plan    read a playlist and search each song on the other platform (changes nothing)
   review  list songs that need a decision, with links to every candidate
-  apply   create a private playlist from the approved matches
+  apply   create a playlist from the approved matches (private on YouTube and SoundCloud; Spotify makes it public)
 """
 import argparse
 import json
@@ -215,7 +215,7 @@ def main():
                       help='Search again instead of reusing answers saved in the last 30 days')
     review = commands.add_parser('review', help='Show songs that need a decision')
     review.add_argument('--plan', default='plan.json')
-    apply = commands.add_parser('apply', help='Create a private playlist from approved matches')
+    apply = commands.add_parser('apply', help='Create a playlist from approved matches')
     apply.add_argument('--plan', default='plan.json')
     args = parser.parse_args()
     try:

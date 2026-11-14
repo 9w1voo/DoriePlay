@@ -199,8 +199,8 @@ class App:
     def start_plan(self, url, to=None):
         """Search a playlist. Continues an unfinished plan of the same playlist, or opens the finished one."""
         url = (url or '').strip() if isinstance(url, str) else ''
-        if not url or len(url) > 500:
-            raise ApiError(400, 'Paste a playlist link.')
+        if not url or len(url) > (100_000 if '\n' in url else 500):   # a list of songs: ~1,500 lines
+            raise ApiError(400, 'Paste a playlist link or a list of songs.')
         try:
             source = platforms.detect(url)
             target = platforms.get(to) if to else next(p for p in platforms.PLATFORMS.values() if p is not source)
@@ -347,7 +347,7 @@ def make_handler(app, port):
                 body = {}
                 if method == 'POST':
                     length = int(self.headers.get('Content-Length') or 0)
-                    if length > 65536:
+                    if length > 262144:   # a pasted list of songs: 100,000 characters, Cyrillic = 2 bytes each
                         raise ApiError(413, 'Request is too large.')
                     try:
                         body = json.loads(self.rfile.read(length) or b'{}')

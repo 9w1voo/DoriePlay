@@ -118,6 +118,8 @@ button { font: inherit; color: inherit; }
 .start { display: grid; gap: 10px; margin-top: 8px; padding: 20px; }
 .link-input { width: 100%; padding: 14px 20px; border: 1px solid var(--glass-edge); border-radius: 99px; background: var(--glass-sunk); color: var(--text); font: 1.05rem var(--font); }
 .link-input:focus { border-color: var(--accent); outline: none; }
+textarea.link-input { display: block; resize: none; line-height: 1.45; }
+textarea.link-input.multi { border-radius: 22px; }
 .start-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .to { display: grid; gap: 6px; }
 .seg { display: inline-flex; border: 1px solid var(--glass-edge); border-radius: 99px; overflow: hidden; background: var(--surface); }

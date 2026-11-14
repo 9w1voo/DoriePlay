@@ -125,8 +125,12 @@ def search(track):
 
 
 def create_playlist(name):
+    # Tested 14 Nov 2026: Spotify answers public=true anyway (also after PUT public=false), and any playlist
+    # opens by its link without signing in. Only the Spotify app itself can make it private.
     result = client()._post('me/playlists', payload={
         'name': name, 'public': False, 'description': 'Transferred with Dorie Play'})
+    print('Note: Spotify makes playlists created by apps public; anyone with the link can open it. '
+          'To hide it, open it in Spotify -> ... -> Make private.')
     return result['id']
 
 

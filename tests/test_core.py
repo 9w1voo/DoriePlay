@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import dorieplay  # noqa: E402
 import platforms  # noqa: E402
-from platforms import soundcloud, spotify, youtube  # noqa: E402
+from platforms import soundcloud, spotify, text, youtube  # noqa: E402
 
 
 def track(source_id, **extra):
@@ -72,6 +72,33 @@ class Detect(Case):
         self.assertIs(platforms.detect('https://www.youtube.com/playlist?list=PLspotifyABC'), youtube)
         self.assertIs(platforms.detect('https://open.spotify.com/intl-de/playlist/5abc?si=x'), spotify)
         self.assertIs(platforms.detect('https://on.soundcloud.com/AbC'), soundcloud)
+
+    def test_a_list_of_songs_is_text_and_an_unknown_link_is_still_refused(self):
+        self.assertIs(platforms.detect('Кино - Кукушка\nZemfira - Мачо'), text)
+        self.assertIs(platforms.detect('https://open.spotify.com/track/1\nKino - Gruppa krovi'), text)
+        self.assertIs(platforms.detect('Zemfira - Мачо'), text)
+        with self.assertRaises(ValueError):
+            platforms.detect('example.com/playlist/1')
+
+
+class TextList(unittest.TestCase):
+    def test_lines_become_songs(self):
+        name, tracks = text.read_playlist('# my list\n\n1. Кино - Кукушка 6:38\n'
+                                          'T-Fest, Иван Дорн - Прониклась мной (feat. Скриптонит)\nСтыдно\n')
+        self.assertEqual(name, 'Song list')
+        self.assertEqual([(t['artists'], t['title'], t['duration_ms']) for t in tracks], [
+            (['Кино'], 'Кукушка', 398000),
+            (['T-Fest', 'Иван Дорн', 'Скриптонит'], 'Прониклась мной', 0),
+            ([], 'Стыдно', 0)])
+        self.assertEqual(len({t['source_id'] for t in tracks}), 3)
+
+    def test_the_same_list_pasted_again_is_the_same_playlist(self):
+        self.assertEqual(text.playlist_key('A - B\n\nC - D'), text.playlist_key('  A - B\nC - D\n'))
+        self.assertEqual(text.read_playlist('A - B')[1][0]['source_id'], text.read_playlist(' A  -  B ')[1][0]['source_id'])
+
+    def test_song_links_are_refused_with_a_reason(self):
+        with self.assertRaisesRegex(ValueError, 'Line 2 is a link'):
+            text.read_playlist('Kino - Kukushka\nhttps://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC')
 
 
 class Resume(Case):

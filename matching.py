@@ -122,15 +122,20 @@ def score(track, candidate):
         lead_match = len(lead_words & context) / len(lead_words)
         artist_match = max(artist_match, 0.7 * lead_match + 0.3 * artist_match)
     seconds = candidate['seconds']
-    expected = track['duration_ms'] / 1000
+    expected = (track.get('duration_ms') or 0) / 1000
+    penalty = sum(0.25 for variant in VARIANTS
+                  if has_phrase(title, normalize(variant)) and not has_phrase(song, normalize(variant)))
+    if not expected:
+        # A pasted list often has no lengths: judge by names alone, and still keep out albums and snippets.
+        if seconds and not 60 <= seconds <= 15 * 60:
+            penalty += 0.5
+        return round(max(0, (0.55 * similarity + 0.3 * artist_match) / 0.85 - penalty), 3)
     delta = abs(seconds - expected)
     timing = max(0, 1 - delta / 30)
     # YouTube auto-generated "... - Topic" channels carry the label's studio audio; an exact length
     # match there is strong evidence even when the channel name is not the artist (e.g. "Release - Topic").
     if candidate.get('topic') and delta <= 2:
         artist_match = max(artist_match, 0.8)
-    penalty = sum(0.25 for variant in VARIANTS
-                  if has_phrase(title, normalize(variant)) and not has_phrase(song, normalize(variant)))
     # Full albums, mixes and short snippets are not the track, whatever their title says.
     if seconds and not 0.6 * expected <= seconds <= 1.6 * expected + 30:
         penalty += 0.5
