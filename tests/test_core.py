@@ -83,9 +83,10 @@ class Detect(Case):
 
 class TextList(unittest.TestCase):
     def test_lines_become_songs(self):
-        name, tracks = text.read_playlist('# my list\n\n1. Кино - Кукушка 6:38\n'
+        name, tracks = text.read_playlist('# my list\n\n1. Кино - Кукушка 6:38\n# a comment\n'
                                           'T-Fest, Иван Дорн - Прониклась мной (feat. Скриптонит)\nСтыдно\n')
-        self.assertEqual(name, 'Song list')
+        self.assertEqual(name, 'my list')
+        self.assertEqual(text.read_playlist('A - B\n# not a name')[0], 'Song list')
         self.assertEqual([(t['artists'], t['title'], t['duration_ms']) for t in tracks], [
             (['Кино'], 'Кукушка', 398000),
             (['T-Fest', 'Иван Дорн', 'Скриптонит'], 'Прониклась мной', 0),

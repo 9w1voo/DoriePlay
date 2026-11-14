@@ -165,6 +165,9 @@ class Flow(ServerCase):
         self.assertTrue(plan['tracks'][0]['approved'])
         self.assertEqual(self.call('/api/plans', {'url': 'Song - A\nhttps://open.spotify.com/track/1', 'to': 'youtube'})[0], 200)
         self.assertIn('Line 2 is a link', self.wait()['error'])
+        status, answer = self.call('/api/plans', {'url': 'A - B\n' * 20000, 'to': 'youtube'})
+        self.assertEqual(status, 400)
+        self.assertIn('too long', answer['error'])
 
     def test_bad_requests_get_a_plain_answer(self):
         self.assertEqual(self.call('/api/plans', {'url': 'https://example.com/x'})[0], 400)

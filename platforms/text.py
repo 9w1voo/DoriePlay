@@ -1,5 +1,6 @@
 """A pasted list of songs as the source: one song per line, "Artist - Title", optionally numbered
-("12. ...") and with the length at the end ("3:45"). For playlists a service will not let us read,
+("12. ...") and with the length at the end ("3:45"); a first line "# Name" names the playlist (the page
+writes one when it reads a Spotify data file). For playlists a service will not let us read,
 e.g. Spotify without the user's own key. Source side only: it is never a target, so it is not in
 PLATFORMS; platforms.detect() returns it for text that is not a link."""
 import hashlib
@@ -37,7 +38,8 @@ def read_playlist(text):
                        'duration_ms': (int(length[1]) * 60 + int(length[2])) * 1000 if length else 0,
                        'source_id': 'line-' + hashlib.sha1(normalize(line).encode()).hexdigest()[:12],
                        'source_title': line})
-    return 'Song list', tracks
+    first = text.strip().splitlines()[0].strip() if text.strip() else ''
+    return (first.lstrip('#').strip() if first.startswith('#') else '') or 'Song list', tracks
 
 
 def playlist_key(text):

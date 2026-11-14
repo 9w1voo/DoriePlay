@@ -199,7 +199,10 @@ class App:
     def start_plan(self, url, to=None):
         """Search a playlist. Continues an unfinished plan of the same playlist, or opens the finished one."""
         url = (url or '').strip() if isinstance(url, str) else ''
-        if not url or len(url) > (100_000 if '\n' in url else 500):   # a list of songs: ~1,500 lines
+        if '\n' in url and len(url) > 100_000:   # a list of songs: ~1,500 lines
+            raise ApiError(400, 'The list is too long: at most 100,000 characters (about 1,500 songs). '
+                                'Split it into parts.')
+        if not url or ('\n' not in url and len(url) > 500):
             raise ApiError(400, 'Paste a playlist link or a list of songs.')
         try:
             source = platforms.detect(url)

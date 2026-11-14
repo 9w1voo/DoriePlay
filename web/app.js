@@ -23,7 +23,7 @@ function t(key, vars) {
 }
 
 const S = { state: null, plan: null, filter: null, open: new Set(), playing: new Map(), timer: null, target: null,
-            setup: null, link: '' };
+            setup: null, link: '', files: null };
 
 function el(tag, attrs, ...kids) {
   const node = document.createElement(tag);
@@ -77,6 +77,24 @@ function sourceOf(url) {
   return url && !url.includes('/') ? 'text' : null;
 }
 const listLines = text => text.split('\n').filter(line => line.trim() && !line.trim().startsWith('#')).length;
+
+/* Spotify "Download your data" → Account data. Playlist1.json: playlists[].items[].track {trackName,
+   artistName}; YourLibrary.json (liked songs): tracks[] {artist, track}. Spotify does not document the
+   format (written from memory, not checked on a real export yet), so it is read leniently. The names only
+   ever become text in the song field. */
+function exportPlaylists(data) {
+  const song = item => {
+    const title = item && (item.trackName || (typeof item.track === 'string' && item.track) || item.name);
+    const artist = item && (item.artistName || item.artist || '');
+    return title ? String(artist ? `${artist} - ${title}` : title).replace(/\s+/g, ' ').trim() : null;
+  };
+  const lists = (Array.isArray(data && data.playlists) ? data.playlists : []).map(p => ({
+    name: String((p && p.name) || '').replace(/\s+/g, ' ').trim(),
+    songs: ((p && p.items) || []).map(item => song(item && item.track)).filter(Boolean) }));
+  if (Array.isArray(data && data.tracks)) lists.unshift({ name: t('likedSongs'), songs: data.tracks.map(song).filter(Boolean) });
+  return lists.filter(list => list.songs.length);
+}
+const listText = list => [`# ${list.name || t('songList')}`, ...list.songs].join('\n');
 
 function safeLink(url) {
   try {
@@ -169,6 +187,22 @@ function home() {
   const targets = el('div', { class: 'seg', role: 'group', 'aria-label': t('whereTo') });
   const hint = el('p', { class: 'hint' });
   const go = el('button', { class: 'btn primary big', type: 'submit', text: t('findSongs') });
+  // A Spotify data file: read here, in the page; the chosen playlist becomes lines in the song field.
+  const picker = el('input', { type: 'file', accept: '.json,application/json', hidden: true, async onchange() {
+    let lists = [];
+    try { lists = exportPlaylists(JSON.parse(await picker.files[0].text())); } catch { /* not JSON */ }
+    picker.value = '';
+    if (!lists.length) { toast(t('fileUnknown'), true); return; }
+    S.files = lists.length > 1 ? lists : null;
+    if (lists.length === 1) S.link = listText(lists[0]);
+    redrawHome();
+  } });
+  const fromFile = el('p', { class: 'hint' }, picker,
+    el('button', { class: 'link', type: 'button', text: t('fromFile'), onclick: () => picker.click() }), ' ' + t('fromFileHow'));
+  const chooser = S.files && el('div', { class: 'file-lists' }, el('span', { class: 'field-label', text: t('chooseList') }),
+    el('div', { class: 'chips' }, S.files.map(list => el('button', { class: 'chip', type: 'button',
+      text: `${list.name || t('songList')} · ${songs(list.songs.length)}`,
+      onclick() { S.link = listText(list); S.files = null; redrawHome(); } }))));
 
   function drawTargets() {
     S.link = input.value;   // kept when the page is redrawn (set-up panel, language)
@@ -207,7 +241,7 @@ function home() {
     el('label', { class: 'field-label', text: t('linkLabel') }), input,
     el('div', { class: 'start-row' },
       el('div', { class: 'to' }, el('span', { class: 'field-label', text: t('to') }), targets), go),
-    hint);
+    hint, fromFile, chooser);
 
   const view = el('div', { class: 'home' },
     S.state.demo && el('div', { class: 'banner' },
@@ -493,14 +527,15 @@ function drawPlan() {
       el('p', { class: 'route', text: `${label(S.plan.from)} → ${label(S.plan.to)} · ${songs(tracks.length)}` })),
     job && job.state === 'error' && jobCard(job),
     job && job.state === 'done' && job.kind === 'apply' && job.result && resultCard(job),
-    el('div', { class: 'stats' },
-      el('div', { class: 'stat s-auto' }, el('b', { text: going }), el('span', { text: t('statIn') })),
-      el('div', { class: 'stat s-ask' }, el('b', { text: counts.ask }), el('span', { text: t('statAsk') })),
-      el('div', { class: 'stat s-none' }, el('b', { text: counts.none + counts.skip }), el('span', { text: t('statOut') }))),
-    el('div', { class: 'chips', role: 'group', 'aria-label': t('whichSongs') }, FILTERS.map(([id, key, statuses]) =>
-      el('button', { class: 'chip', type: 'button', 'aria-pressed': String(id === S.filter),
-        onclick() { S.filter = id; drawPlan(); } },
-        t(key), el('span', { class: 'chip-count', text: statuses.reduce((sum, status) => sum + counts[status], 0) })))),
+    // The three counters are the filter (Ivan kept clicking them); pressing the chosen one again shows all.
+    el('div', { class: 'stats', role: 'group', 'aria-label': t('whichSongs') },
+      [['in', 's-auto', going, t('statIn')], ['ask', 's-ask', counts.ask, t('statAsk')],
+       ['out', 's-none', counts.none + counts.skip, t('statOut')]].map(([id, tone, number, text]) =>
+        el('button', { class: 'stat ' + tone, type: 'button', 'aria-pressed': String(S.filter === id),
+          onclick() { S.filter = S.filter === id ? 'all' : id; drawPlan(); } },
+          el('b', { text: number }), el('span', { text })))),
+    el('div', { class: 'chips' }, el('button', { class: 'chip', type: 'button', 'aria-pressed': String(S.filter === 'all'),
+      onclick() { S.filter = 'all'; drawPlan(); } }, t('fAll'), el('span', { class: 'chip-count', text: tracks.length }))),
     el('div', { class: 'rows' }, rows.length ? rows
       : el('p', { class: 'empty-list', text: S.filter === 'ask' ? t('emptyAsk') : t('emptyOther') })),
     videoIds.length > 0 && musicCard(videoIds, gone),

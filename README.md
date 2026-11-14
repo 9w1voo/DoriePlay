@@ -52,7 +52,10 @@ The page opens at `http://127.0.0.1:8765` and is reachable only from your comput
 
 1. Paste a playlist link and choose where to transfer it. No access to the source playlist (for example,
    Spotify without your own key)? Paste the songs instead, one per line as `Artist - Title`; a length at the
-   end (`3:45`) helps matching.
+   end (`3:45`) helps matching. Or open your Spotify data file: on spotify.com, Account → Privacy →
+   Download your data → Account data; Spotify emails an archive. Unzip it and choose `Playlist1.json` (your
+   playlists) or `YourLibrary.json` (liked songs) with **Open a Spotify data file**. The file is read in the
+   page and is not sent anywhere.
 2. Wait for the search. Confident matches are approved automatically.
 3. Review the songs that need a decision: listen, pick a candidate, or leave the song out.
 4. Press **Create private playlist** (for Spotify: **Create playlist**) and confirm. Spotify ignores the

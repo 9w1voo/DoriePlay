@@ -120,6 +120,8 @@ button { font: inherit; color: inherit; }
 .link-input:focus { border-color: var(--accent); outline: none; }
 textarea.link-input { display: block; resize: none; line-height: 1.45; }
 textarea.link-input.multi { border-radius: 22px; }
+.file-lists { margin-top: 12px; }
+.file-lists .chips { margin-top: 6px; }
 .start-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .to { display: grid; gap: 6px; }
 .seg { display: inline-flex; border: 1px solid var(--glass-edge); border-radius: 99px; overflow: hidden; background: var(--surface); }
@@ -160,6 +162,9 @@ textarea.link-input.multi { border-radius: 22px; }
 .stat { display: grid; padding: 14px 16px; box-shadow: var(--glass-shine), inset 0 3px 0 var(--tone), var(--shadow); }
 .stat b { font: 700 1.9rem/1.1 var(--font); }
 .stat span { color: var(--muted); font-size: 0.86rem; }
+button.stat { text-align: left; cursor: pointer; transition: transform 0.12s, box-shadow 0.12s; }
+button.stat:hover { transform: translateY(-1px); }
+.stat[aria-pressed="true"] { border-color: var(--tone); box-shadow: var(--glass-shine), inset 0 3px 0 var(--tone), 0 0 0 1px var(--tone), var(--shadow); }
 .s-auto, .s-ok { --tone: var(--ok); }
 .s-ask { --tone: var(--ask); }
 .s-skip, .s-none { --tone: var(--none); }
