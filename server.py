@@ -47,6 +47,28 @@ class ApiError(Exception):
         self.status = status
 
 
+def key_file(name, value, redirect):
+    """What to write for a pasted key, or ApiError if it does not look like one. Messages never quote it."""
+    if name == 'spotify':
+        if not re.fullmatch(r'[0-9a-fA-F]{32}', value):
+            raise ApiError(400, 'A Spotify Client ID is 32 characters: digits and the letters a to f.')
+        return {'client_id': value.lower()}
+    try:
+        data = json.loads(value)
+    except ValueError:
+        data = None
+    if name == 'youtube':
+        installed = data.get('installed') if isinstance(data, dict) else None
+        if not (isinstance(installed, dict) and str(installed.get('client_id', '')).endswith('.apps.googleusercontent.com')
+                and isinstance(installed.get('client_secret'), str) and installed.get('token_uri')):
+            raise ApiError(400, 'Paste the whole JSON file of a Google OAuth client of the "Desktop app" type.')
+        return {'installed': installed}
+    fields = data if isinstance(data, dict) else {}
+    if not all(re.fullmatch(r'[\w-]{8,100}', str(fields.get(key, ''))) for key in ('client_id', 'client_secret')):
+        raise ApiError(400, 'Paste the Client ID and the Client secret of your SoundCloud app.')
+    return {'client_id': fields['client_id'], 'client_secret': fields['client_secret'], 'redirect_uri': redirect}
+
+
 class JobOutput:
     """Collects what the core prints while a job runs (it replaces stdout for that time)."""
 
@@ -123,11 +145,41 @@ class App:
         """Whether the key and a saved sign-in are in place; a guess from files, nothing is contacted."""
         if self.demo:
             return {'key': True, 'signed_in': True}
-        module = platform
-        if platform.NAME == 'spotify':
-            return {'key': bool(os.environ.get('SPOTIPY_CLIENT_ID')),
-                    'signed_in': (module.ROOT / '.spotify-token').exists()}
-        return {'key': module.CLIENT_FILE.exists(), 'signed_in': module.TOKEN_FILE.exists()}
+        key = platform.client_id() if platform.NAME == 'spotify' else platform.CLIENT_FILE.exists()
+        return {'key': bool(key), 'signed_in': platform.TOKEN_FILE.exists()}
+
+    def save_key(self, name, value, replace=False):
+        """The set-up page: check that a pasted key has the right shape and save it next to the program,
+        readable only by this user. The value is never sent back, printed or logged; whether the key
+        really works shows at the first sign-in. A saved sign-in belongs to the old key (YouTube's
+        token even carries the old client inside), so it is removed: the next use signs in again."""
+        if self.demo:
+            raise ApiError(400, 'The demo does not save keys.')
+        if name not in ('spotify', 'youtube', 'soundcloud'):
+            raise ApiError(404, 'There is no such service.')
+        if name == 'spotify' and os.environ.get('SPOTIPY_CLIENT_ID'):
+            raise ApiError(409, 'SPOTIPY_CLIENT_ID is set where the program was started (for example in '
+                                '~/.zshrc), and it wins over a key saved here. Remove it there and start '
+                                'the program again, or change the Client ID there.')
+        if not isinstance(value, str) or not value.strip() or len(value) > 20000:
+            raise ApiError(400, 'Paste the key first.')
+        module = platforms.get(name)
+        data = key_file(name, value.strip(), getattr(module, 'DEFAULT_REDIRECT', ''))
+        with self.lock:
+            if self.busy():
+                raise ApiError(409, 'Wait until the running task is finished.')
+            if module.CLIENT_FILE.exists() and not replace:
+                raise ApiError(409, 'A key for this service is already saved. Tick "Replace" to change it.')
+            descriptor = os.open(module.CLIENT_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(descriptor, 'w', encoding='utf-8') as file:
+                json.dump(data, file, indent=2)
+            os.chmod(module.CLIENT_FILE, 0o600)
+            module.TOKEN_FILE.unlink(missing_ok=True)
+            if name == 'soundcloud':
+                module._token = None    # its _client is a function, the sign-in is cached in _token
+            else:
+                module._client = None
+            return {'saved': True, **self.connection(module)}
 
     def youtube_searches_left(self):
         """An estimate from the search cache: searches made since midnight Pacific time, when YouTube
@@ -319,6 +371,8 @@ def make_handler(app, port):
                     return self.reply(200, app.start_apply(parts[1]))
                 if method == 'POST' and len(parts) == 3 and parts[0] == 'plans' and parts[2] == 'check':
                     return self.reply(200, app.start_check(parts[1]))
+                if method == 'POST' and len(parts) == 2 and parts[0] == 'keys':
+                    return self.reply(200, app.save_key(parts[1], body.get('value'), body.get('replace') is True))
                 raise ApiError(404, 'Not found.')
             except ApiError as error:
                 self.reply(error.status, {'error': str(error)})

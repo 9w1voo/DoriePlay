@@ -22,7 +22,8 @@ function t(key, vars) {
   return String(text).replace(/\{(\w+)\}/g, (whole, name) => (vars && name in vars ? vars[name] : whole));
 }
 
-const S = { state: null, plan: null, filter: null, open: new Set(), playing: new Map(), timer: null, target: null };
+const S = { state: null, plan: null, filter: null, open: new Set(), playing: new Map(), timer: null, target: null,
+            setup: null };
 
 function el(tag, attrs, ...kids) {
   const node = document.createElement(tag);
@@ -222,13 +223,60 @@ function plansSection() {
         (plan.applied ? ' · ' + t('transferred') : '') })))));
 }
 
+/* Set-up help for each service: where to get the key (official pages only) and how it is pasted.
+   Keys go to the program on this computer and are saved next to it; the page never shows them again. */
+const SETUP = {
+  spotify: { site: 'https://developer.spotify.com/dashboard', steps: () => [t('setSp1'), t('setSp2'), t('setSp3')] },
+  youtube: { site: 'https://console.cloud.google.com/', steps: () => [t('setYt1'), t('setYt2'), t('setYt3')] },
+  soundcloud: { site: 'https://soundcloud.com/you/apps', steps: () => [t('setSc1'), t('setSc2')] },
+};
+const redrawHome = () => document.getElementById('view').replaceChildren(home());
+const GUIDE = 'https://github.com/9w1voo/DoriePlay#connecting-the-services';
+
+function setupPanel(p) {
+  const fields = p.name === 'soundcloud'
+    ? [el('input', { class: 'link-input', autocomplete: 'off', placeholder: t('scId'), 'aria-label': t('scId') }),
+       el('input', { class: 'link-input', type: 'password', autocomplete: 'off', placeholder: t('scSecret'),
+         'aria-label': t('scSecret') })]
+    : p.name === 'youtube'
+      ? [el('textarea', { class: 'key-text', rows: 4, spellcheck: 'false', placeholder: t('ytPaste'), 'aria-label': t('ytPaste') })]
+      : [el('input', { class: 'link-input', autocomplete: 'off', placeholder: t('spPaste'), 'aria-label': t('spPaste') })];
+  const replace = p.key && el('input', { type: 'checkbox' });
+  async function save() {
+    const value = p.name === 'soundcloud'
+      ? JSON.stringify({ client_id: fields[0].value.trim(), client_secret: fields[1].value.trim() }) : fields[0].value;
+    try {
+      await api('keys/' + p.name, { value, replace: Boolean(replace && replace.checked) });
+      fields.forEach(field => { field.value = ''; });
+      S.setup = null;
+      S.state = await api('state');
+      redrawHome();
+      toast(t('keySaved'));
+    } catch (error) { toast(error.message, true); }
+  }
+  const setup = SETUP[p.name];
+  return el('div', { class: 'setup' },
+    el('ol', { class: 'setup-steps' }, setup.steps().map(text => el('li', { text }))),
+    el('p', { class: 'hint' }, el('a', { href: setup.site, target: '_blank', rel: 'noopener noreferrer', text: setup.site }),
+      ' · ', el('a', { href: GUIDE, target: '_blank', rel: 'noopener noreferrer', text: t('setGuide') })),
+    fields,
+    replace && el('label', { class: 'setup-replace' }, replace, ' ', t('setReplace')),
+    el('div', { class: 'setup-actions' },
+      el('button', { class: 'btn primary small', type: 'button', text: t('setSave'), onclick: save }),
+      el('span', { class: 'hint', text: t('setLocal') })));
+}
+
 function connectionsSection() {
   const left = S.state.youtube_searches_left;
   return el('section', { class: 'block' }, el('h2', { text: t('services') }),
     el('div', { class: 'conn-list' }, S.state.platforms.map(p => el('div', { class: 'conn' },
       el('span', { class: 'conn-name', text: p.label }),
       el('span', { class: 'dot ' + (p.key ? 'on' : 'off'), text: p.key ? t('keyYes') : t('keyNo') }),
-      el('span', { class: 'dot ' + (p.signed_in ? 'on' : 'idle'), text: p.signed_in ? t('signedYes') : t('signedLater') })))),
+      el('span', { class: 'dot ' + (p.signed_in ? 'on' : 'idle'), text: p.signed_in ? t('signedYes') : t('signedLater') }),
+      el('button', { class: 'btn ghost small conn-setup', type: 'button', 'aria-expanded': String(S.setup === p.name),
+        text: p.key ? t('setChange') : t('setUp'),
+        onclick() { S.setup = S.setup === p.name ? null : p.name; redrawHome(); } }),
+      S.setup === p.name && setupPanel(p)))),
     el('p', { class: 'hint', text: t('ytLeft', { left }) }));
 }
 

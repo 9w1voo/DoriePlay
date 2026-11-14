@@ -66,11 +66,15 @@ python dorieplay.py apply --plan my.json
 
 ## Connecting the services
 
+The easiest way: on the start page, under **Services**, press **Set up** next to a service, follow the
+steps and paste the key there. The program checks that it looks right and saves it next to itself,
+readable only by your user. The steps below do the same by hand.
+
 **Spotify**
 
 1. Create an app at https://developer.spotify.com/dashboard and tick *Web API*.
 2. Add the redirect URI `http://127.0.0.1:8888/callback`.
-3. Set the Client ID before starting the program (no client secret is needed):
+3. Paste the Client ID on the start page, or set it before starting the program (no client secret is needed):
 
 ```sh
 export SPOTIPY_CLIENT_ID='your_client_id'
@@ -110,8 +114,9 @@ computer that runs the program.
 ## Your data
 
 Keys, sign-in tokens, plans and the search cache stay in the program folder on your computer.
-**Never publish** `google-client.json`, `soundcloud-client.json`, any `*token*` file, your plans or
-your Spotify Client ID. The included `.gitignore` already excludes them.
+**Never publish** `google-client.json`, `soundcloud-client.json`, `spotify-client.json`, any `*token*`
+file, your plans or your Spotify Client ID. The included `.gitignore` already excludes them.
+See also the [privacy policy](docs/privacy.html) (draft).
 
 ## Development
 

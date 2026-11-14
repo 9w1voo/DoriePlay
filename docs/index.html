@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dorie Play — move a playlist and check every song</title>
+  <meta name="description" content="Move playlists between Spotify, YouTube and SoundCloud. Dorie Play searches first, shows you every match, and creates a private playlist only from the songs you approved.">
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="./"><img src="logo.svg" alt="">Dorie Play</a>
+      <nav><a href="#how">How it works</a><a href="#need">What you need</a><a href="privacy.html">Privacy</a><a href="https://github.com/9w1voo/DoriePlay">GitHub</a></nav>
+    </header>
+
+    <h1>Move a playlist —<br>and check every song</h1>
+    <p class="lead">Dorie Play moves your playlists between Spotify, YouTube and SoundCloud, in any direction.
+      It searches first, shows you every match, and creates a private playlist only from the songs you approved.
+      Nothing is transferred blindly.</p>
+    <div class="buttons">
+      <a class="btn primary" href="https://github.com/9w1voo/DoriePlay">Get it on GitHub</a>
+      <a class="btn" href="#how">How it works</a>
+    </div>
+    <img class="shot" src="review.png" alt="Review screen: each song next to its match, with the ones that need a decision on top" width="1280" height="900">
+
+    <section id="how">
+      <h2>How it works</h2>
+      <div class="steps">
+        <div class="panel"><h3>1. Paste a link</h3><p>A playlist from Spotify, YouTube or SoundCloud, and where it should go.</p></div>
+        <div class="panel"><h3>2. Review the matches</h3><p>Confident matches are approved for you. Listen to the rest, pick another candidate or leave a song out.</p></div>
+        <div class="panel"><h3>3. Get a private playlist</h3><p>Only approved songs are added. Running it again adds only what is missing — no duplicates.</p></div>
+      </div>
+    </section>
+
+    <section id="need">
+      <h2>What you need</h2>
+      <div class="panel">
+        <p class="intro">There is no shared server and no shared key: Dorie Play runs on your own computer and you connect the services with your own API keys. The start page walks you through it.</p>
+        <table>
+          <tr><th>Spotify</th><td>A free developer app (Client ID). The app owner needs Spotify Premium. Only playlists you own or collaborate on can be read.</td></tr>
+          <tr><th>YouTube</th><td>A Google Cloud project with YouTube Data API v3. About 100 searches a day; a long playlist going to YouTube takes several days, and the program continues where it stopped.</td></tr>
+          <tr><th>SoundCloud</th><td>API keys, which SoundCloud gives only to Artist Pro subscribers.</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Your data stays with you</h2>
+      <div class="panel"><p>Keys, sign-ins, plans and search answers are kept in the program folder on your computer.
+        Dorie Play talks only to the services you connect, and only when you start a search or a transfer.
+        Read the <a href="privacy.html">privacy policy</a>.</p></div>
+    </section>
+
+    <footer>
+      Dorie Play is source-available under the PolyForm Noncommercial License 1.0.0.
+      Not affiliated with Spotify, YouTube, Google or SoundCloud. The screenshot shows the built-in demo with an invented playlist.
+    </footer>
+  </div>
+</body>
+</html>

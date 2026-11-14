@@ -1,0 +1,61 @@
+/* Dorie Play site: the same glass look as the program, no outside fonts or scripts. */
+:root {
+  --bg: #130f18; --text: #f8f4f8; --muted: rgb(248 244 248 / 0.66); --accent: #ff8f5a; --accent-ink: #1e0e05;
+  --panel: linear-gradient(180deg, rgb(255 255 255 / 0.13), rgb(255 255 255 / 0.05)); --edge: rgb(255 255 255 / 0.17);
+  --a: rgb(255 122 69 / 0.5); --b: rgb(206 64 143 / 0.45); --c: rgb(120 84 214 / 0.42);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5eee9; --text: #1d1820; --muted: rgb(29 24 32 / 0.66); --accent: #e2602e; --accent-ink: #fff8f3;
+    --panel: linear-gradient(180deg, rgb(255 255 255 / 0.75), rgb(255 255 255 / 0.45)); --edge: rgb(255 255 255 / 0.85);
+    --a: rgb(255 170 120 / 0.7); --b: rgb(244 150 196 / 0.55); --c: rgb(185 160 245 / 0.5);
+    color-scheme: light;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(42vmax 42vmax at 10% 12%, var(--a), transparent 70%),
+              radial-gradient(36vmax 36vmax at 90% 10%, var(--b), transparent 70%),
+              radial-gradient(46vmax 46vmax at 70% 90%, var(--c), transparent 70%);
+}
+a { color: var(--accent); }
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 0; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 700; font-size: 1.15rem; letter-spacing: -0.02em; }
+.brand img { width: 34px; height: 34px; border-radius: 9px; }
+nav { display: flex; gap: 18px; font-size: 0.95rem; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--text); }
+h1 { font-size: clamp(2rem, 5.5vw, 3.4rem); line-height: 1.08; letter-spacing: -0.03em; margin: 40px 0 16px; }
+h2 { font-size: 1.5rem; letter-spacing: -0.02em; margin: 0 0 12px; }
+h3 { font-size: 1.05rem; margin: 0 0 6px; }
+.lead { color: var(--muted); font-size: 1.15rem; max-width: 60ch; margin: 0 0 26px; }
+.buttons { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 40px; }
+.btn { display: inline-block; padding: 12px 24px; border-radius: 99px; border: 1px solid var(--edge); background: var(--panel); color: var(--text); text-decoration: none; font-weight: 600; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.shot { display: block; width: 100%; height: auto; border-radius: 18px; border: 1px solid var(--edge); box-shadow: 0 24px 60px rgb(0 0 0 / 0.35); }
+section { margin: 64px 0; }
+.panel { padding: 24px; border-radius: 24px; border: 1px solid var(--edge); background: var(--panel);
+  -webkit-backdrop-filter: blur(24px) saturate(170%); backdrop-filter: blur(24px) saturate(170%); }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.steps p, .panel p { margin: 0; color: var(--muted); }
+.panel p.intro { margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; vertical-align: top; padding: 10px 8px; border-bottom: 1px solid var(--edge); }
+th { width: 9em; }
+.policy h2 { margin-top: 36px; font-size: 1.25rem; }
+.policy ul { padding-left: 22px; }
+.policy li { margin: 4px 0; }
+code { font: 0.9em ui-monospace, "SF Mono", Menlo, monospace; }
+.draft { padding: 10px 14px; border: 1px dashed var(--accent); border-radius: 12px; font-size: 0.95rem; }
+footer { padding: 30px 0 50px; color: var(--muted); font-size: 0.9rem; }
+img { max-width: 100%; }
+@media (max-width: 640px) {
+  header { flex-wrap: wrap; }
+  nav { flex-wrap: wrap; gap: 6px 14px; }
+  th, td { display: block; width: auto; padding: 4px 0; border: 0; }
+  td { padding-bottom: 12px; border-bottom: 1px solid var(--edge); }
+}

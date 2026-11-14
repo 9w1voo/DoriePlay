@@ -1,8 +1,9 @@
-"""Spotify via Web API (PKCE, Client ID in SPOTIPY_CLIENT_ID).
+"""Spotify via Web API (PKCE, Client ID in SPOTIPY_CLIENT_ID or spotify-client.json).
 
 Uses the development-mode endpoints introduced in February 2026:
 /playlists/{id}/items instead of /tracks, POST /me/playlists, search limit of 10.
 """
+import json
 import os
 import re
 from pathlib import Path
@@ -13,7 +14,20 @@ NAME = 'spotify'
 LABEL = 'Spotify'
 SCOPES = 'playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public'
 ROOT = Path(__file__).resolve().parent.parent   # the token lives next to the program, wherever it is run from
+CLIENT_FILE = ROOT / 'spotify-client.json'      # {"client_id": ...}, written by the set-up page
+TOKEN_FILE = ROOT / '.spotify-token'
+REDIRECT_URI = 'http://127.0.0.1:8888/callback'
 _client = None
+
+
+def client_id():
+    """SPOTIPY_CLIENT_ID if set, else the Client ID saved by the set-up page, else None."""
+    if os.environ.get('SPOTIPY_CLIENT_ID'):
+        return os.environ['SPOTIPY_CLIENT_ID']
+    try:
+        return json.loads(CLIENT_FILE.read_text(encoding='utf-8')).get('client_id') or None
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 def owns(url):
@@ -47,11 +61,12 @@ def client():
         return _client
     import spotipy
     from spotipy.oauth2 import SpotifyPKCE
-    client_id = os.environ.get('SPOTIPY_CLIENT_ID')
-    if not client_id:
-        raise ValueError('Set SPOTIPY_CLIENT_ID to your Spotify developer app Client ID.')
-    auth = SpotifyPKCE(client_id=client_id, redirect_uri='http://127.0.0.1:8888/callback',
-                       scope=SCOPES, cache_path=str(ROOT / '.spotify-token'))
+    found = client_id()
+    if not found:
+        raise ValueError('Add your Spotify developer app Client ID on the start page (Services → Set up), '
+                         'or set SPOTIPY_CLIENT_ID.')
+    auth = SpotifyPKCE(client_id=found, redirect_uri=REDIRECT_URI,
+                       scope=SCOPES, cache_path=str(TOKEN_FILE))
     _client = spotipy.Spotify(auth_manager=auth)
     return _client
 

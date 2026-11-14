@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dorie Play — privacy policy</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <div class="wrap policy">
+    <header>
+      <a class="brand" href="./"><img src="logo.svg" alt="">Dorie Play</a>
+      <nav><a href="./">Home</a><a href="https://github.com/9w1voo/DoriePlay">GitHub</a></nav>
+    </header>
+
+    <h1>Privacy policy</h1>
+    <p class="draft">Draft of 14 November 2026, not yet in force. To be completed before publishing: the contact address below.</p>
+
+    <h2>In short</h2>
+    <p>Dorie Play is a program that runs on your own computer. It has no server of its own: the developer receives
+      no data about you, your playlists or how you use the program. There are no accounts, no analytics and no ads.</p>
+
+    <h2>What the program keeps on your computer</h2>
+    <p>Everything below is stored in the program folder on your computer and nowhere else:</p>
+    <ul>
+      <li><b>Your API keys</b> for the services you connect: <code>spotify-client.json</code>, <code>google-client.json</code>,
+        <code>soundcloud-client.json</code>. Keys saved through the program's set-up page are readable only by
+        your user account; a key file you put there yourself keeps the permissions you gave it.</li>
+      <li><b>Sign-ins</b> (access tokens) given by the services after you sign in: <code>.spotify-token</code>,
+        <code>.youtube-token.json</code>, <code>.soundcloud-token.json</code>. When you save a new key for a
+        service, its old sign-in is deleted.</li>
+      <li><b>Plans</b> in the <code>plans</code> folder: the name of a playlist, its songs (title, artists, length,
+        service ids), the candidates found for each song (title, artist or channel, length, link) and your decisions.
+        They stay until you delete them.</li>
+      <li><b>Search answers</b> in <code>.search-cache.json</code>, so that the same songs are not searched twice.
+        Answers older than 30 days are not used again and are removed the next time the program searches.</li>
+      <li>In your browser, the page remembers only your chosen language and look (light or dark).</li>
+    </ul>
+
+    <h2>What is sent, and to whom</h2>
+    <p>Dorie Play connects directly from your computer to the services you choose — Spotify, YouTube (Google) and
+      SoundCloud — with your own keys and your own sign-in, and only when you start an action:</p>
+    <ul>
+      <li>reading the playlist you paste;</li>
+      <li>searching for each song on the service you transfer to;</li>
+      <li>checking whether the chosen YouTube videos still exist, when you press “Check the videos”;</li>
+      <li>creating a private playlist and adding the songs you approved, when you confirm the transfer.</li>
+    </ul>
+    <p>Nothing is sold or shared with anyone else. Each service handles what it receives under its own policy:
+      <a href="https://policies.google.com/privacy">Google Privacy Policy</a>,
+      <a href="https://www.spotify.com/legal/privacy-policy/">Spotify Privacy Policy</a>,
+      <a href="https://soundcloud.com/pages/privacy">SoundCloud Privacy Policy</a>.</p>
+
+    <h2>Players</h2>
+    <p>When you press “Listen” next to a candidate, the page loads that service's own player (YouTube through
+      youtube-nocookie.com, Spotify or SoundCloud). Until you press it, nothing is loaded from those services.
+      A player is run by the service and follows its policy.</p>
+
+    <h2>YouTube API Services</h2>
+    <p>Dorie Play uses YouTube API Services. By using it with YouTube you agree to the
+      <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>, and your data is handled under the
+      <a href="https://policies.google.com/privacy">Google Privacy Policy</a>. You can remove Dorie Play's access to
+      your Google account at any time on the
+      <a href="https://security.google.com/settings/security/permissions">Google security settings page</a>.</p>
+
+    <h2>Removing your data</h2>
+    <ul>
+      <li>Delete the files and the <code>plans</code> folder listed above from the program folder, or delete the whole folder.</li>
+      <li>Remove the program's access to your accounts: for Google on the page linked above, for Spotify and
+        SoundCloud in the connected or authorised apps section of your account settings there.</li>
+    </ul>
+
+    <h2>Changes</h2>
+    <p>Changes to this policy are published on this page, with the date at the top.</p>
+
+    <h2>Contact</h2>
+    <p>[contact address — to be added]</p>
+
+    <footer>Dorie Play is source-available under the PolyForm Noncommercial License 1.0.0. Not affiliated with Spotify, YouTube, Google or SoundCloud.</footer>
+  </div>
+</body>
+</html>
