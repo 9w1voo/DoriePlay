@@ -154,7 +154,7 @@ textarea.link-input.multi { border-radius: 22px; }
 .dot.off::before { background: var(--accent); }
 
 /* --- plan --- */
-.plan { display: grid; gap: 18px; }
+.plan { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }   /* long one-line texts shorten, never widen the page */
 .back { color: var(--muted); text-decoration: none; font-size: 0.9rem; justify-self: start; }
 .back:hover { color: var(--text); }
 .plan-head { display: grid; gap: 4px; }

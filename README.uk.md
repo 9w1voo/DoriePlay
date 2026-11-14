@@ -161,6 +161,12 @@ python dorieplay.py apply --plan назва.json
 - Назви відео YouTube бувають довільними («Кино-Бездельник.avi»), тож для
   YouTube → Spotify виконавець і назва вгадуються з назви відео й каналу;
   такі пісні частіше потрапляють у review.
+- База пісень (необов'язково, для перенесення в YouTube): відео, які редактори Discogs прив'язали
+  до релізів (дамп Discogs, CC0; 5,8 млн відео в листопаді 2026). Пісню, яку база знає напевно,
+  програма бере без пошуку YouTube; такі кандидати позначені «з Discogs, не пошук YouTube».
+  `python songbase.py build discogs_…_masters.xml.gz`, потім `python songbase.py serve` і
+  `DORIEPLAY_SONGBASE=http://127.0.0.1:8771 python server.py`. У базу йдуть лише назва, виконавці
+  й тривалість пісні; сервер бази нічого не записує в журнали.
 
 Apple Music поки не підтримується: його API вимагає платного Apple Developer Program.
 

@@ -428,7 +428,8 @@ function candidateRow(index, track, candidate) {
     el('span', { class: 'cand-text' },
       el('b', { text: candidate.title || '—' }),
       el('i', { text: `${candidate.artist || '—'} · ${clock(candidate.seconds || 0)}` +
-        (delta ? ` (${delta > 0 ? '+' : '−'}${Math.abs(delta)} ${t('sec')})` : '') })),
+        (delta ? ` (${delta > 0 ? '+' : '−'}${Math.abs(delta)} ${t('sec')})` : '') +
+        (candidate.source === 'discogs' ? ` · ${t('fromDiscogs')}` : '') })),
     el('span', { class: 'cand-actions' },
       frameUrl && el('button', { class: 'btn ghost', type: 'button', text: S.playing.get(index) === candidate.id ? t('hide') : t('listen'),
         onclick() { S.playing.get(index) === candidate.id ? S.playing.delete(index) : S.playing.set(index, candidate.id); drawPlan(); } }),
@@ -445,7 +446,7 @@ function trackRow(track, index) {
   const right = status === 'none' ? el('span', { class: 'dst empty', text: t('nothingFound') })
     : status === 'skip' ? el('span', { class: 'dst empty', text: t('notTransferred') })
     : match ? el('span', { class: 'dst' }, el('b', { text: match.title }),
-        el('i', { text: `${match.artist} · ${clock(match.seconds || 0)}` }))
+        el('i', { text: `${match.artist} · ${clock(match.seconds || 0)}` + (match.source === 'discogs' ? ` · ${t('fromDiscogs')}` : '') }))
     : el('span', { class: 'dst empty', text: t('noCandidate') });
   const head = el('button', { class: 'row-main', type: 'button', 'aria-expanded': String(open), onclick() {
     open ? S.open.delete(index) : S.open.add(index); drawPlan();

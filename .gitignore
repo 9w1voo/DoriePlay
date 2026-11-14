@@ -13,3 +13,7 @@ plans/
 CLAUDE.md
 .claude/
 .DS_Store
+# the song base (built from the Discogs dump, hundreds of MB) and the dump itself
+*.sqlite
+*.sqlite-*
+discogs_*.xml.gz

@@ -33,6 +33,9 @@ class ServerCase(unittest.TestCase):
         self.addCleanup(lambda: (platforms.PLATFORMS.clear(), platforms.PLATFORMS.update(real)))
         platforms.PLATFORMS.clear()
         platforms.PLATFORMS.update(demo.platforms_for_demo(delay=0))
+        saved = os.environ.pop('DORIEPLAY_SONGBASE', None)   # the demo flow never asks a real song base
+        if saved is not None:
+            self.addCleanup(os.environ.__setitem__, 'DORIEPLAY_SONGBASE', saved)
         self.addCleanup(setattr, dorieplay, 'CACHE', dorieplay.CACHE)
         dorieplay.CACHE = Path(folder.name) / 'cache.json'
         self.addCleanup(setattr, server.JobOutput, 'echo', True)

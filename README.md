@@ -119,6 +119,23 @@ computer that runs the program.
   the songs into a playlist of your own first.
 - A SoundCloud playlist holds at most 500 tracks.
 
+### Song base (optional, transfers to YouTube)
+
+YouTube allows about 100 searches a day for the whole program. The song base answers many songs
+without a search: it holds the YouTube videos that Discogs editors linked to releases (Discogs data
+dump, CC0; 5.8 million videos in November 2026).
+
+```sh
+python songbase.py build discogs_20261101_masters.xml.gz   # monthly dump from https://data.discogs.com/
+python songbase.py serve                                    # http://127.0.0.1:8771
+DORIEPLAY_SONGBASE=http://127.0.0.1:8771 python server.py
+```
+
+Only the title, artists and length of each song are sent to the base. A song is taken from it only when
+one of its videos is a confident match; such candidates are marked "from Discogs, not a YouTube search",
+and otherwise YouTube is searched as before. The base server writes no logs. Videos linked on Discogs
+may have been deleted since: use **Check the videos** on the plan.
+
 ## Your data
 
 Keys, sign-in tokens, plans and the search cache stay in the program folder on your computer.

@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import platforms
+import songbase
 from matching import is_confident, normalize, rank
 
 CACHE = Path(__file__).resolve().parent / '.search-cache.json'
@@ -133,7 +134,13 @@ def make_plan(args, progress=None):
     if progress:
         progress(len(plan['tracks']), len(tracks))
     for track in tracks[len(plan['tracks']):]:
-        candidates = rank(track, cached_search(target, track, not args.no_cache))[:KEEP]
+        # A song the song base is sure about costs no YouTube search (100 a day for the whole app). Its
+        # candidates are never mixed with YouTube's (policy III.C.5): either the base's or YouTube's.
+        candidates = songbase.confident(track, songbase.lookup(track))[:KEEP] if target.NAME == 'youtube' else []
+        if candidates:
+            print('   (found in the song base, no YouTube search)')
+        else:
+            candidates = rank(track, cached_search(target, track, not args.no_cache))[:KEEP]
         best = candidates[0] if candidates else None
         confident = is_confident(candidates)
         plan['tracks'].append({**track, 'approved': confident, 'match_id': best['id'] if best else None,
