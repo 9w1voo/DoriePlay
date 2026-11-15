@@ -108,6 +108,11 @@ class Security(ServerCase):
 
 
 class Flow(ServerCase):
+    def test_soundcloud_shows_no_key_in_the_demo(self):
+        shown = {p['name']: p for p in self.call('/api/state')[1]['platforms']}
+        self.assertIs(shown['soundcloud']['no_key'], True)
+        self.assertIs(shown['spotify']['no_key'], False)
+
     def test_a_job_survives_a_missing_or_narrow_console(self):
         class Narrow:   # a Windows console in cp1252 cannot print every song title
             def write(self, text):
@@ -318,10 +323,10 @@ class Keys(unittest.TestCase):
                    mock.patch.object(spotify, '_client', None), mock.patch.object(youtube, '_client', None),
                    mock.patch.object(soundcloud, '_token', None)]
         for module, key, token in ((spotify, 'spotify-client.json', '.spotify-token'),
-                                   (youtube, 'google-client.json', '.youtube-token.json'),
-                                   (soundcloud, 'soundcloud-client.json', '.soundcloud-token.json')):
+                                   (youtube, 'google-client.json', '.youtube-token.json')):
             patches.append(mock.patch.object(module, 'CLIENT_FILE', self.dir / key))
             patches.append(mock.patch.object(module, 'TOKEN_FILE', self.dir / token))
+        patches.append(mock.patch.object(soundcloud, 'TOKEN_FILE', self.dir / '.soundcloud-token.json'))
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
@@ -353,23 +358,18 @@ class Keys(unittest.TestCase):
 
     def test_a_new_key_drops_the_sign_in_of_the_old_one(self):
         youtube.TOKEN_FILE.write_text('{"client_id": "old"}')
-        soundcloud.TOKEN_FILE.write_text('{}')
-        soundcloud._token = {'access_token': 'old'}
         youtube._client = object()
         installed = {'client_id': 'new.apps.googleusercontent.com', 'client_secret': 's', 'token_uri': 'https://x'}
         state = self.app.save_key('youtube', json.dumps({'installed': installed}))
         self.assertEqual((state['key'], state['signed_in'], youtube._client), (True, False, None))
         self.assertFalse(youtube.TOKEN_FILE.exists())
-        self.app.save_key('soundcloud', json.dumps({'client_id': 'abcdEFGH1234', 'client_secret': 'secret-5678-x'}))
-        self.assertEqual((soundcloud.TOKEN_FILE.exists(), soundcloud._token), (False, None))
-        self.assertTrue(callable(soundcloud._client))   # the function is left alone
 
     def test_wrong_shapes_are_refused_and_never_quoted(self):
         secret = 'my-secret-value-123'
         for name, value in (('spotify', secret), ('youtube', json.dumps({'web': {'client_id': secret}})),
-                            ('youtube', secret), ('soundcloud', json.dumps({'client_id': secret}))):
+                            ('youtube', secret)):
             self.assertNotIn(secret, self.refused(400, name, value), name)
-        self.assertFalse(any(m.CLIENT_FILE.exists() for m in (spotify, youtube, soundcloud)))
+        self.assertFalse(any(m.CLIENT_FILE.exists() for m in (spotify, youtube)))
         self.refused(400, 'spotify', '')
         self.refused(404, 'dropbox', 'ab12' * 8)
         demo_app = server.App(self.dir / 'demo-plans', demo=True)
@@ -377,14 +377,17 @@ class Keys(unittest.TestCase):
             demo_app.save_key('spotify', 'ab12' * 8)
         self.assertFalse(spotify.CLIENT_FILE.exists())
 
-    def test_google_desktop_client_and_soundcloud_app_are_saved(self):
+    def test_soundcloud_needs_no_key(self):
+        self.assertEqual(soundcloud.TOKEN_FILE.parent, self.dir)
+        self.assertEqual(self.app.connection(soundcloud), {'key': True, 'no_key': True, 'signed_in': False})
+
+    def test_google_desktop_client_is_saved_and_soundcloud_takes_no_key(self):
         installed = {'client_id': '123-abc.apps.googleusercontent.com', 'client_secret': 'GOCSPX-x',
                      'token_uri': 'https://oauth2.googleapis.com/token'}
         self.app.save_key('youtube', json.dumps({'installed': installed}))
         self.assertEqual(json.loads(youtube.CLIENT_FILE.read_text()), {'installed': installed})
-        self.app.save_key('soundcloud', json.dumps({'client_id': 'abcdEFGH1234', 'client_secret': 'secret-5678-x'}))
-        self.assertEqual(json.loads(soundcloud.CLIENT_FILE.read_text())['redirect_uri'], soundcloud.DEFAULT_REDIRECT)
-        self.assertTrue(all(self.app.connection(m)['key'] for m in (youtube, soundcloud)))
+        self.assertIn('SoundCloud needs no key.', self.refused(404, 'soundcloud', '{}'))
+        self.assertTrue(self.app.connection(youtube)['key'])
 
 
 if __name__ == '__main__':

@@ -218,7 +218,7 @@ DATA_PATHS = """
 import json, dorieplay, server
 from platforms import soundcloud, spotify, youtube
 files = [spotify.CLIENT_FILE, spotify.TOKEN_FILE, youtube.CLIENT_FILE, youtube.TOKEN_FILE,
-         soundcloud.CLIENT_FILE, soundcloud.TOKEN_FILE, dorieplay.CACHE, server.PLANS, dorieplay.SETTINGS]
+         soundcloud.TOKEN_FILE, dorieplay.CACHE, server.PLANS, dorieplay.SETTINGS]
 print(json.dumps({'data': [str(f.parent) for f in files],
                   'web': str(server.WEB)}))
 """
@@ -248,7 +248,7 @@ class DataFolder(unittest.TestCase):
             self.assertEqual(done.returncode, 0, done.stderr)
             found = json.loads(done.stdout)
             self.assertEqual(found['data'], [home] * len(found['data']))
-            self.assertEqual(len(found['data']), 9)
+            self.assertEqual(len(found['data']), 8)
             self.assertEqual(found['web'], str(PROJECT / 'web'))
 
     def test_ensure_makes_a_private_folder_and_leaves_an_existing_one_alone(self):

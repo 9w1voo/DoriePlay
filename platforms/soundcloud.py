@@ -1,9 +1,9 @@
 """SoundCloud via the public API (OAuth 2.1 with PKCE).
 
-Credentials come from soundcloud-client.json in the data folder (paths.py):
-  {"client_id": "...", "client_secret": "...", "redirect_uri": "http://127.0.0.1:8890/callback"}
-SoundCloud issues them only to Artist Pro subscribers (soundcloud.com/you/apps).
-The redirect URI must be registered on that page exactly as written in the file.
+SoundCloud runs on Dorie Play's own app: the program carries only the public client_id, and there is no
+secret in it. Token requests (sign-in code, refresh) go to relay.py on base.dorieplay.com, which adds the
+secret and the redirect URI and passes SoundCloud's answer on. The user needs no key of their own.
+The sign-in comes back to http://127.0.0.1:8890/callback on this computer (platforms.signin).
 
 API facts used here (github.com/soundcloud/api, openapi/api.yaml):
   auth   https://secure.soundcloud.com/authorize, token https://secure.soundcloud.com/oauth/token;
@@ -17,10 +17,11 @@ API facts used here (github.com/soundcloud/api, openapi/api.yaml):
 import base64
 import hashlib
 import json
+import os
 import re
 import secrets
 import time
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, urlsplit
 
 import paths
 from matching import gather, parse_video, queries
@@ -33,9 +34,14 @@ API = 'https://api.soundcloud.com'
 AUTHORIZE = 'https://secure.soundcloud.com/authorize'
 TOKEN_URL = 'https://secure.soundcloud.com/oauth/token'
 ROOT = paths.data_folder()   # key and token live in the data folder
-CLIENT_FILE = ROOT / 'soundcloud-client.json'
 TOKEN_FILE = ROOT / '.soundcloud-token.json'
 DEFAULT_REDIRECT = 'http://127.0.0.1:8890/callback'
+CLIENT_ID = 'sQE0BOTyBi3sJiClVnkaYde5lxV0l7n8'   # public; the secret lives only on the relay
+RELAY = 'https://base.dorieplay.com'
+NEEDS_KEY = False   # the user brings no key (Spotify and YouTube still do)
+LIMIT_TEXT = 'Too many SoundCloud sign-ins from this computer. Try again within an hour.'
+BUSY_TEXT = 'SoundCloud sign-in is busy for everyone right now. Try again in a few minutes.'
+UNREACHABLE_TEXT = 'Dorie Play’s sign-in server could not reach SoundCloud. Try again later.'
 MAX_PLAYLIST_TRACKS = 500   # SoundCloud's limit per playlist
 ALL_ACCESS = 'playable,preview,blocked'
 _token = None
@@ -70,17 +76,24 @@ def playlist_url(urn):
 
 # --- Auth -----------------------------------------------------------------------------------------
 
-def _client():
-    if not CLIENT_FILE.exists():
-        raise ValueError('Add your SoundCloud app on the start page (Services → Set up). '
-                         'SoundCloud gives API keys to Artist Pro subscribers.')
-    data = json.loads(CLIENT_FILE.read_text(encoding='utf-8'))
-    data.setdefault('redirect_uri', DEFAULT_REDIRECT)
-    return data
+class Refused(PermissionError):
+    """SoundCloud itself refused the code or the refresh token (invalid_grant): signing in again helps."""
+
+
+def relay():
+    """Address of the token relay: DORIEPLAY_SC_RELAY or RELAY. https anywhere; http only to this computer."""
+    value = (os.environ.get('DORIEPLAY_SC_RELAY') or RELAY).strip()
+    parts = urlsplit(value)
+    local = parts.scheme == 'http' and parts.hostname in ('127.0.0.1', 'localhost')
+    if (parts.scheme != 'https' and not local) or not parts.hostname or parts.username is not None \
+            or parts.password is not None or parts.query or parts.fragment:
+        raise ValueError('DORIEPLAY_SC_RELAY must be an https address (or http to 127.0.0.1 / localhost) '
+                         'without a user name, query or fragment.')
+    return value[:-1] if value.endswith('/') else value
 
 
 def _save_token(data):
-    data = {**data, 'expires_at': time.time() + int(data.get('expires_in', 3600)) - 60}
+    data = {**data, 'client_id': CLIENT_ID, 'expires_at': time.time() + int(data.get('expires_in', 3600)) - 60}
     TOKEN_FILE.touch(mode=0o600, exist_ok=True)
     TOKEN_FILE.chmod(0o600)
     TOKEN_FILE.write_text(json.dumps(data), encoding='utf-8')
@@ -88,43 +101,69 @@ def _save_token(data):
 
 
 def _token_request(fields):
+    """Ask the relay for a token. The token file changes only after a good answer."""
     import requests
-    app = _client()
-    fields = {**fields, 'client_id': app['client_id']}
-    if app.get('client_secret'):
-        fields['client_secret'] = app['client_secret']
-    response = requests.post(TOKEN_URL, data=fields, headers={'accept': 'application/json; charset=utf-8'},
-                             timeout=30)
-    if not response.ok:
-        raise PermissionError(f'SoundCloud token request failed: {response.status_code} {response.text[:200]}')
-    return _save_token(response.json())
+    try:
+        response = requests.post(relay() + '/v1/soundcloud/token', json=fields, timeout=30,
+                                 allow_redirects=False, headers={'accept': 'application/json'})
+    except requests.RequestException as error:
+        raise RuntimeError(UNREACHABLE_TEXT) from error
+    status = response.status_code
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        raise RuntimeError(UNREACHABLE_TEXT)
+    error = body.get('error')
+    error = error if isinstance(error, str) else None
+    if status == 200 and isinstance(body.get('access_token'), str) and isinstance(body.get('refresh_token'), str):
+        return _save_token(body)
+    if status == 429 and error == 'relay_limit':
+        raise RuntimeError(LIMIT_TEXT)
+    if status == 503 and error in ('relay_busy', 'soundcloud_busy'):
+        raise RuntimeError(BUSY_TEXT)
+    if status in (400, 401) and error == 'invalid_grant':
+        raise Refused(f'SoundCloud refused the sign-in: {error}')
+    if status in (400, 401) and error:
+        description = body.get('error_description')
+        raise PermissionError(f'SoundCloud sign-in failed: {error}'
+                              + (f': {description}' if isinstance(description, str) and description else ''))
+    raise RuntimeError(UNREACHABLE_TEXT)
 
 
 def _login():
     """Authorization Code + PKCE; the browser comes back to the redirect URI (platforms.signin)."""
-    app = _client()
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
     state = secrets.token_urlsafe(16)
     url = AUTHORIZE + '?' + urlencode({
-        'client_id': app['client_id'], 'redirect_uri': app['redirect_uri'], 'response_type': 'code',
+        'client_id': CLIENT_ID, 'redirect_uri': DEFAULT_REDIRECT, 'response_type': 'code',
         'code_challenge': challenge, 'code_challenge_method': 'S256', 'state': state})
-    code = signin.wait_for_code(LABEL, url, app['redirect_uri'], state)
-    return _token_request({'grant_type': 'authorization_code', 'code': code,
-                           'redirect_uri': app['redirect_uri'], 'code_verifier': verifier})
+    code = signin.wait_for_code(LABEL, url, DEFAULT_REDIRECT, state, announce=False)
+    token = _token_request({'grant_type': 'authorization_code', 'code': code, 'code_verifier': verifier})
+    print('Signed in to SoundCloud.')   # only after the exchange worked
+    return token
 
 
 def _access_token(force_refresh=False):
     global _token
     if _token is None and TOKEN_FILE.exists():
-        _token = json.loads(TOKEN_FILE.read_text(encoding='utf-8'))
-    if _token and not force_refresh and time.time() < _token.get('expires_at', 0):
+        try:
+            _token = json.loads(TOKEN_FILE.read_text(encoding='utf-8'))
+        except ValueError:
+            _token = {}
+    if not isinstance(_token, dict) or (_token and _token.get('client_id') != CLIENT_ID):
+        # a token of another app (an older own key) is never sent to the relay
+        _token = None
+        TOKEN_FILE.unlink(missing_ok=True)
+    elif _token and not force_refresh and time.time() < _token.get('expires_at', 0):
         return _token['access_token']
     if _token and _token.get('refresh_token'):
         try:  # refresh tokens are single-use: the new one is saved right away
             _token = _token_request({'grant_type': 'refresh_token', 'refresh_token': _token['refresh_token']})
             return _token['access_token']
-        except PermissionError:
+        except Refused:
             pass
     _token = _login()
     return _token['access_token']

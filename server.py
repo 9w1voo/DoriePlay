@@ -65,10 +65,7 @@ def key_file(name, value, redirect):
                 and isinstance(installed.get('client_secret'), str) and installed.get('token_uri')):
             raise ApiError(400, 'Paste the whole JSON file of a Google OAuth client of the "Desktop app" type.')
         return {'installed': installed}
-    fields = data if isinstance(data, dict) else {}
-    if not all(re.fullmatch(r'[\w-]{8,100}', str(fields.get(key, ''))) for key in ('client_id', 'client_secret')):
-        raise ApiError(400, 'Paste the Client ID and the Client secret of your SoundCloud app.')
-    return {'client_id': fields['client_id'], 'client_secret': fields['client_secret'], 'redirect_uri': redirect}
+    raise ApiError(404, 'There is no such service.')
 
 
 class JobOutput:
@@ -167,19 +164,23 @@ class App:
 
     def connection(self, platform):
         """Whether the key and a saved sign-in are in place; a guess from files, nothing is contacted."""
+        no_key = not getattr(platform, 'NEEDS_KEY', True)   # SoundCloud runs on Dorie Play's own app
         if self.demo:
-            return {'key': True, 'signed_in': True}
-        key = platform.client_id() if platform.NAME == 'spotify' else platform.CLIENT_FILE.exists()
-        return {'key': bool(key), 'signed_in': platform.TOKEN_FILE.exists()}
+            return {'key': True, 'no_key': no_key, 'signed_in': True}
+        key = True if no_key else bool(platform.client_id() if platform.NAME == 'spotify'
+                                       else platform.CLIENT_FILE.exists())
+        return {'key': key, 'no_key': no_key, 'signed_in': platform.TOKEN_FILE.exists()}
 
     def save_key(self, name, value, replace=False):
         """The set-up page: check that a pasted key has the right shape and save it in the data folder,
         readable only by this user. The value is never sent back, printed or logged; whether the key
         really works shows at the first sign-in. A saved sign-in belongs to the old key (YouTube's
         token even carries the old client inside), so it is removed: the next use signs in again."""
+        if name == 'soundcloud':
+            raise ApiError(404, 'SoundCloud needs no key.')
         if self.demo:
             raise ApiError(400, 'The demo does not save keys.')
-        if name not in ('spotify', 'youtube', 'soundcloud'):
+        if name not in ('spotify', 'youtube'):
             raise ApiError(404, 'There is no such service.')
         if name == 'spotify' and os.environ.get('SPOTIPY_CLIENT_ID'):
             raise ApiError(409, 'SPOTIPY_CLIENT_ID is set where the program was started (for example in '
@@ -199,10 +200,7 @@ class App:
                 json.dump(data, file, indent=2)
             os.chmod(module.CLIENT_FILE, 0o600)
             module.TOKEN_FILE.unlink(missing_ok=True)
-            if name == 'soundcloud':
-                module._token = None    # its _client is a function, the sign-in is cached in _token
-            else:
-                module._client = None
+            module._client = None
             return {'saved': True, **self.connection(module)}
 
     def youtube_searches_left(self):

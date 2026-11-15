@@ -31,6 +31,7 @@ class Fake:
 
     def __init__(self, real, delay=0.25):
         self.NAME, self.LABEL, self.owns = real.NAME, real.LABEL, real.owns
+        self.NEEDS_KEY = getattr(real, 'NEEDS_KEY', True)
         self.delay, self.playlists = delay, {}
 
     def playlist_key(self, url):

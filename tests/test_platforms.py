@@ -5,6 +5,7 @@ Run from the project folder:  python -m unittest discover tests
 """
 import contextlib
 import io
+import os
 import json
 import socket
 import sys
@@ -63,7 +64,7 @@ class PlatformCase(unittest.TestCase):
                    mock.patch.object(spotify, 'TOKEN_FILE', here / '.spotify-token'),
                    mock.patch.object(youtube, 'CLIENT_FILE', here / 'google-client.json'),
                    mock.patch.object(youtube, 'TOKEN_FILE', here / '.youtube-token.json'),
-                   mock.patch.object(soundcloud, 'CLIENT_FILE', here / 'soundcloud-client.json'),
+                   mock.patch.dict(os.environ, {'DORIEPLAY_SC_RELAY': 'http://127.0.0.1:9'}),
                    mock.patch.object(soundcloud, 'TOKEN_FILE', here / '.soundcloud-token.json'),
                    mock.patch.object(soundcloud, '_token', None),
                    mock.patch.object(youtube.time, 'sleep', lambda seconds: self.slept.append(seconds)),
@@ -110,6 +111,10 @@ class SignIn(unittest.TestCase):
             for thread in threads:
                 thread.join(10)
             self.output = output.getvalue()
+
+    def test_the_caller_can_announce_the_sign_in_itself(self):
+        self.assertEqual(self.wait('code=abc&state=ours', announce=False), 'abc')
+        self.assertNotIn('Signed in to', self.output)
 
     def test_the_code_comes_back_through_the_redirect(self):
         self.assertEqual(self.wait('code=abc&state=ours'), 'abc')
@@ -508,25 +513,127 @@ class SoundCloud(PlatformCase):
             soundcloud.add_items('soundcloud:playlists:9', [(u, u) for u in urns(1000, 2)])
         self.assertEqual(api.puts, [])
 
-    def test_sign_in_uses_the_shared_wait_with_pkce_and_state(self):
-        soundcloud.CLIENT_FILE.write_text(json.dumps({'client_id': 'id1', 'client_secret': 's1'}), encoding='utf-8')
-        waits, requests = [], []
+    def relay_answers(self, *answers):
+        """Stand-in requests.post: records each call and answers from the list (an exception is raised)."""
+        calls, queue = [], list(answers)
+        requests = sys.modules['requests']
 
-        def wait_for_code(label, auth_url, redirect_uri, state):
-            waits.append((label, auth_url, redirect_uri, state))
+        class Answer:
+            def __init__(self, status, body):
+                self.status_code, self.body, self.headers = status, body, {}
+                self.ok = 200 <= status < 300
+
+            def json(self):
+                if isinstance(self.body, (dict, list)):
+                    return self.body
+                raise ValueError('not json')
+
+        requests.RequestException = type('RequestException', (Exception,), {})
+
+        def post(url, json=None, timeout=None, allow_redirects=True, headers=None):
+            calls.append({'url': url, 'json': json, 'allow_redirects': allow_redirects, 'timeout': timeout})
+            answer = queue.pop(0)
+            if answer == 'down':
+                raise requests.RequestException('down')
+            return Answer(*answer)
+
+        requests.post = post
+        return calls
+
+    def test_sign_in_uses_the_shared_wait_with_pkce_and_state(self):
+        self.assertFalse(hasattr(soundcloud, 'CLIENT_FILE'))
+        waits = []
+        calls = self.relay_answers((200, {'access_token': 'a1', 'refresh_token': 'r1', 'expires_in': 3600}))
+
+        def wait_for_code(label, auth_url, redirect_uri, state, announce=True):
+            waits.append((label, auth_url, redirect_uri, state, announce))
             return 'code1'
 
-        with mock.patch.object(signin, 'wait_for_code', wait_for_code), \
-                mock.patch.object(soundcloud, '_token_request', lambda fields: requests.append(fields) or {}):
+        with mock.patch.object(signin, 'wait_for_code', wait_for_code):
             soundcloud._login()
-        [(label, auth_url, redirect, state)] = waits
+        [(label, auth_url, redirect, state, announce)] = waits
         self.assertEqual(label, 'SoundCloud')
+        query = parse_qs(urlparse(auth_url).query)
         self.assertEqual(urlparse(auth_url).hostname, 'secure.soundcloud.com')
-        self.assertEqual(parse_qs(urlparse(auth_url).query)['state'], [state])
-        self.assertEqual(redirect, soundcloud.DEFAULT_REDIRECT)
-        [fields] = requests
-        self.assertEqual((fields['grant_type'], fields['code']), ('authorization_code', 'code1'))
-        self.assertTrue(fields['code_verifier'])
+        self.assertEqual(query['state'], [state])
+        self.assertEqual(query['client_id'], [soundcloud.CLIENT_ID])
+        self.assertEqual(query['redirect_uri'], [soundcloud.DEFAULT_REDIRECT])
+        self.assertEqual((redirect, announce), (soundcloud.DEFAULT_REDIRECT, False))
+        [call] = calls
+        self.assertEqual(call['url'], 'http://127.0.0.1:9/v1/soundcloud/token')
+        self.assertIs(call['allow_redirects'], False)
+        self.assertEqual(set(call['json']), {'grant_type', 'code', 'code_verifier'})
+        self.assertEqual((call['json']['grant_type'], call['json']['code']), ('authorization_code', 'code1'))
+        saved = json.loads(soundcloud.TOKEN_FILE.read_text(encoding='utf-8'))
+        self.assertEqual(saved['client_id'], soundcloud.CLIENT_ID)
+        self.assertIn('Signed in to SoundCloud.', sys.stdout.getvalue())
+
+    def expired_token(self, **extra):
+        data = {'access_token': 'a0', 'refresh_token': 'r1', 'expires_at': 0,
+                'client_id': soundcloud.CLIENT_ID, **extra}
+        soundcloud.TOKEN_FILE.write_text(json.dumps(data), encoding='utf-8')
+        return soundcloud.TOKEN_FILE.read_bytes()
+
+    def test_a_refused_refresh_signs_in_again_but_a_busy_relay_does_not(self):
+        for status in (400, 401):
+            before = self.expired_token()
+            self.relay_answers((status, {'error': 'invalid_grant'}))
+            logins = []
+            with mock.patch.object(soundcloud, '_login', lambda: logins.append(1) or {'access_token': 'new'}), \
+                    mock.patch.object(soundcloud, '_token', None):
+                self.assertEqual(soundcloud._access_token(), 'new')
+            self.assertEqual(len(logins), 1, status)
+        cases = [((503, {'error': 'relay_busy'}), RuntimeError, soundcloud.BUSY_TEXT),
+                 ((503, {'error': 'soundcloud_busy'}), RuntimeError, soundcloud.BUSY_TEXT),
+                 ((429, {'error': 'relay_limit'}), RuntimeError, soundcloud.LIMIT_TEXT),
+                 ((502, {'error': 'soundcloud_refused'}), RuntimeError, soundcloud.UNREACHABLE_TEXT),
+                 ((404, {'error': 'x'}), RuntimeError, soundcloud.UNREACHABLE_TEXT),
+                 ('down', RuntimeError, soundcloud.UNREACHABLE_TEXT),
+                 ((200, {'access_token': 'a'}), RuntimeError, soundcloud.UNREACHABLE_TEXT),
+                 ((200, ['x']), RuntimeError, soundcloud.UNREACHABLE_TEXT),
+                 ((400, {'error': 5}), RuntimeError, soundcloud.UNREACHABLE_TEXT),
+                 ((302, {}), RuntimeError, soundcloud.UNREACHABLE_TEXT),
+                 ((429, {'error': 'other'}), RuntimeError, soundcloud.UNREACHABLE_TEXT),
+                 ((400, {'error': 'invalid_client'}), PermissionError, 'invalid_client')]
+        for answer, error, text in cases:
+            before = self.expired_token()
+            self.relay_answers(answer)
+            logins = []
+            with mock.patch.object(soundcloud, '_login', lambda: logins.append(1)), \
+                    mock.patch.object(soundcloud, '_token', None):
+                with self.assertRaises(error) as caught:
+                    soundcloud._access_token()
+            self.assertIn(text, str(caught.exception), answer)
+            self.assertNotIsInstance(caught.exception, soundcloud.Refused, answer)
+            self.assertEqual((logins, soundcloud.TOKEN_FILE.read_bytes()), ([], before), answer)
+
+    def test_a_token_of_another_app_is_never_sent_to_the_relay(self):
+        for extra in ({'client_id': 'someone-else'}, {'client_id': None}):
+            data = {'access_token': 'a0', 'refresh_token': 'r1', 'expires_at': 0, **extra}
+            if extra['client_id'] is None:
+                del data['client_id']
+            soundcloud.TOKEN_FILE.write_text(json.dumps(data), encoding='utf-8')
+            calls = self.relay_answers()
+            logins = []
+            with mock.patch.object(soundcloud, '_login', lambda: logins.append(1) or {'access_token': 'new'}), \
+                    mock.patch.object(soundcloud, '_token', None):
+                soundcloud._access_token()
+            self.assertEqual((calls, logins, soundcloud.TOKEN_FILE.exists()), ([], [1], False), extra)
+
+    def test_the_relay_address_must_be_https_or_local(self):
+        def relay(value):
+            with mock.patch.dict(os.environ, {'DORIEPLAY_SC_RELAY': value}):
+                return soundcloud.relay()
+        for bad in ('http://evil.example', 'http://localhost@evil.example', 'http://127.0.0.1.evil.example',
+                    'https://user:pw@x.example', 'ftp://x', 'https://x.example/?a=1', 'https://x.example/#f'):
+            with self.assertRaises(ValueError, msg=bad):
+                relay(bad)
+        self.assertEqual(relay('http://127.0.0.1:9'), 'http://127.0.0.1:9')
+        self.assertEqual(relay('http://localhost:9'), 'http://localhost:9')
+        self.assertEqual(relay('https://x.example/'), 'https://x.example')
+        with mock.patch.dict(os.environ):
+            os.environ.pop('DORIEPLAY_SC_RELAY', None)
+            self.assertEqual(soundcloud.relay(), soundcloud.RELAY)
 
     def test_the_token_is_never_sent_outside_soundcloud(self):
         for url in ('https://evil.example/x', 'http://api.soundcloud.com/x', 'https://soundcloud.com.evil.example/'):

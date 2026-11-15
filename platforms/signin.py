@@ -66,8 +66,9 @@ class _Server(ExclusiveBind, HTTPServer):
     timeout = 1   # handle_request returns every second, so the deadline is checked
 
 
-def wait_for_code(label, auth_url, redirect_uri, state, timeout=TIMEOUT):
-    """Show the sign-in link and wait until the browser comes back to redirect_uri; return the code."""
+def wait_for_code(label, auth_url, redirect_uri, state, timeout=TIMEOUT, announce=True):
+    """Show the sign-in link and wait until the browser comes back to redirect_uri; return the code.
+    announce=False: the caller prints "Signed in to ..." itself, after it has used the code."""
     redirect = urlparse(redirect_uri)
     host, port = redirect.hostname, redirect.port or 80
     result = {}
@@ -116,5 +117,6 @@ def wait_for_code(label, auth_url, redirect_uri, state, timeout=TIMEOUT):
     if 'code' not in result:
         raise PermissionError(f"{label} sign-in failed: "
                               f"{result.get('error_description') or result.get('error') or 'no code came back'}")
-    print(f'Signed in to {label}.')
+    if announce:
+        print(f'Signed in to {label}.')
     return result['code']
