@@ -6,14 +6,17 @@ Uses the development-mode endpoints introduced in February 2026:
 import json
 import os
 import re
-from pathlib import Path
+import secrets
 
+import paths
 from matching import gather, queries
+
+from . import signin
 
 NAME = 'spotify'
 LABEL = 'Spotify'
 SCOPES = 'playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public'
-ROOT = Path(__file__).resolve().parent.parent   # the token lives next to the program, wherever it is run from
+ROOT = paths.data_folder()   # the token lives in the data folder, wherever the program is run from
 CLIENT_FILE = ROOT / 'spotify-client.json'      # {"client_id": ...}, written by the set-up page
 TOKEN_FILE = ROOT / '.spotify-token'
 REDIRECT_URI = 'http://127.0.0.1:8888/callback'
@@ -60,15 +63,40 @@ def client():
     if _client:
         return _client
     import spotipy
-    from spotipy.oauth2 import SpotifyPKCE
     found = client_id()
     if not found:
         raise ValueError('Add your Spotify developer app Client ID on the start page (Services → Set up), '
                          'or set SPOTIPY_CLIENT_ID.')
-    auth = SpotifyPKCE(client_id=found, redirect_uri=REDIRECT_URI,
-                       scope=SCOPES, cache_path=str(TOKEN_FILE))
-    _client = spotipy.Spotify(auth_manager=auth)
+    _client = spotipy.Spotify(auth_manager=_auth_manager(found))
     return _client
+
+
+def _auth_manager(found):
+    """spotipy's PKCE sign-in with our browser wait (time limit, link on the page) and a new sign-in
+    when Spotify has ended the old one. Built here so spotipy is imported only when Spotify is used."""
+    from spotipy.exceptions import SpotifyOauthError
+    from spotipy.oauth2 import SpotifyPKCE
+
+    class Auth(SpotifyPKCE):
+        def get_authorization_code(self, response=None):
+            if response:
+                return super().get_authorization_code(response)
+            state = secrets.token_urlsafe(16)
+            return signin.wait_for_code(LABEL, self.get_authorize_url(state=state), REDIRECT_URI, state)
+
+        def validate_token(self, token_info):
+            try:
+                return super().validate_token(token_info)
+            except SpotifyOauthError as error:
+                # Refresh tokens end 6 months after signing in; spotipy 2.26 would raise and stay "signed in".
+                if getattr(error, 'error', None) != 'invalid_grant':
+                    raise
+                TOKEN_FILE.unlink(missing_ok=True)
+                print('Your Spotify sign-in is no longer valid (Spotify ends it 6 months after signing in): '
+                      'sign in again.')
+                return None   # spotipy then asks get_authorization_code for a new sign-in
+
+    return Auth(client_id=found, redirect_uri=REDIRECT_URI, scope=SCOPES, cache_path=str(TOKEN_FILE))
 
 
 def _pages(url, **params):
@@ -127,10 +155,11 @@ def search(track):
 def create_playlist(name):
     # Tested 14 Nov 2026: Spotify answers public=true anyway (also after PUT public=false), and any playlist
     # opens by its link without signing in. Only the Spotify app itself can make it private.
-    result = client()._post('me/playlists', payload={
-        'name': name, 'public': False, 'description': 'Transferred with Dorie Play'})
+    # The note comes first: nothing may fail between creating the playlist and returning its id.
     print('Note: Spotify makes playlists created by apps public; anyone with the link can open it. '
           'To hide it, open it in Spotify -> ... -> Make private.')
+    result = client()._post('me/playlists', payload={
+        'name': name, 'public': False, 'description': 'Transferred with Dorie Play'})
     return result['id']
 
 

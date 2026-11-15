@@ -6,16 +6,20 @@
 """
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
+import paths
 import platforms
 import songbase
 from matching import is_confident, normalize, rank
 
-CACHE = Path(__file__).resolve().parent / '.search-cache.json'
+CACHE = paths.data_folder() / '.search-cache.json'
+SETTINGS = paths.data_folder() / 'settings.json'   # the page's switches, e.g. {"songbase": false}
 CACHE_DAYS = 30   # YouTube's API policy: stored API data is refreshed or deleted within 30 days
 KEEP = 10         # candidates kept per song in the plan (best first)
+SONGBASE = 'https://base.dorieplay.com'   # the song base everyone uses unless switched off
 
 
 def save(path, data):
@@ -23,6 +27,28 @@ def save(path, data):
     temp = path.with_suffix(path.suffix + '.tmp')
     temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
     temp.replace(path)
+
+
+def settings():
+    """The page's saved switches; {} when there are none or the file is broken."""
+    try:
+        found = json.loads(SETTINGS.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
+def save_settings(changes):
+    merged = {**settings(), **changes}
+    save(SETTINGS, merged)
+    return merged
+
+
+def songbase_url():
+    """DORIEPLAY_SONGBASE when it is set ('' = off), else the live base unless the page switched it off."""
+    if 'DORIEPLAY_SONGBASE' in os.environ:
+        return os.environ['DORIEPLAY_SONGBASE']
+    return SONGBASE if settings().get('songbase', True) else ''
 
 
 def load(path):
@@ -138,7 +164,8 @@ def make_plan(args, progress=None):
         # candidates are never mixed with YouTube's (policy III.C.5): either the base's or YouTube's.
         candidates = []
         if target.NAME == 'youtube':
-            found = songbase.lookup(track)
+            # Read for every song: switching the base off on the page stops it in a running search too.
+            found = songbase.lookup(track, url=songbase_url())
             # Discogs links go stale (11 of 17 base picks for Ivan's songs were dead, 14 Nov 2026); the check
             # costs 1 quota unit from the shared 10,000, not one of the 100 searches.
             gone = target.unavailable([c['id'] for c in found]) if found else set()
@@ -217,6 +244,7 @@ def apply_plan(args):
 
 
 def main():
+    paths.ensure(paths.data_folder())
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
     plan = commands.add_parser('plan', help='Search only; saves editable candidates')

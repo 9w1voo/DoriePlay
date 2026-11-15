@@ -5,8 +5,9 @@ song can be matched without spending a YouTube search (100 a day for the whole a
   python songbase.py serve [--db songbase.sqlite] [--port 8771]
 
 Dump: https://data.discogs.com/ (data/<year>/discogs_<date>_masters.xml.gz, ~0.6 GB, monthly).
-Dorie Play asks a running base only when DORIEPLAY_SONGBASE is set to its address, and only for
-transfers to YouTube. It sends the song's title, artists and length, nothing else. These candidates are
+Dorie Play asks the live base (https://base.dorieplay.com) by default, and only for transfers to
+YouTube; the switch under Services turns it off, and DORIEPLAY_SONGBASE (an address, or '' for off) wins
+over the switch. It sends the song's title, artists and length, nothing else. These candidates are
 not YouTube search results (YouTube policy III.C.5): they are tagged source "discogs", shown with that
 label, and used only when one of them is a confident match; otherwise YouTube is searched as before.
 Stdlib only. Not checked: whether the linked videos still exist ("Check the videos" on the plan does).

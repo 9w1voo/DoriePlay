@@ -2,17 +2,21 @@
 
 Run from the project folder:  python -m unittest discover tests
 """
+import contextlib
 import json
 import os
+import shutil
 import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
 from unittest import mock
+from zoneinfo import ZoneInfoNotFoundError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -20,6 +24,8 @@ import demo  # noqa: E402
 import dorieplay  # noqa: E402
 import platforms  # noqa: E402
 import server  # noqa: E402
+import songbase  # noqa: E402
+import version  # noqa: E402
 from platforms import soundcloud, spotify, youtube  # noqa: E402
 
 LINK = 'https://open.spotify.com/playlist/demo'
@@ -33,11 +39,13 @@ class ServerCase(unittest.TestCase):
         self.addCleanup(lambda: (platforms.PLATFORMS.clear(), platforms.PLATFORMS.update(real)))
         platforms.PLATFORMS.clear()
         platforms.PLATFORMS.update(demo.platforms_for_demo(delay=0))
-        saved = os.environ.pop('DORIEPLAY_SONGBASE', None)   # the demo flow never asks a real song base
-        if saved is not None:
-            self.addCleanup(os.environ.__setitem__, 'DORIEPLAY_SONGBASE', saved)
+        environment = mock.patch.dict(os.environ, {'DORIEPLAY_SONGBASE': ''})   # never the real song base
+        environment.start()
+        self.addCleanup(environment.stop)
         self.addCleanup(setattr, dorieplay, 'CACHE', dorieplay.CACHE)
         dorieplay.CACHE = Path(folder.name) / 'cache.json'
+        self.addCleanup(setattr, dorieplay, 'SETTINGS', dorieplay.SETTINGS)
+        dorieplay.SETTINGS = Path(folder.name) / 'settings.json'
         self.addCleanup(setattr, server.JobOutput, 'echo', True)
         server.JobOutput.echo = False
         self.app = server.App(Path(folder.name) / 'plans', demo=True)
@@ -100,6 +108,61 @@ class Security(ServerCase):
 
 
 class Flow(ServerCase):
+    def test_a_job_survives_a_missing_or_narrow_console(self):
+        class Narrow:   # a Windows console in cp1252 cannot print every song title
+            def write(self, text):
+                raise UnicodeEncodeError('cp1252', '→', 0, 1, 'x')
+
+            def flush(self):
+                pass
+
+        server.JobOutput.echo = True
+        with mock.patch.object(sys, '__stdout__', None):   # a windowed app on Windows has no console
+            self.planned()
+        with mock.patch.object(sys, '__stdout__', Narrow()):
+            self.planned()
+
+    def test_a_sign_in_line_becomes_a_link_and_the_next_line_clears_it(self):
+        job = {'kind': 'plan', 'lines': [], 'done': 0, 'signin': None}
+        out = server.JobOutput(job)
+        out.echo = False
+        out.write('Sign in to Spotify in your browser: https://accounts.spotify.com/auth')
+        out.write('orize?a=1')
+        self.assertIsNone(job['signin'])   # no end of line yet
+        out.write('\n')
+        self.assertEqual(job['signin'], {'service': 'Spotify', 'url': 'https://accounts.spotify.com/authorize?a=1'})
+        self.assertEqual(job['lines'], [])
+        out.write('Signed in to Spotify.\n')
+        self.assertIsNone(job['signin'])
+        self.assertEqual(job['lines'], ['Signed in to Spotify.'])
+        with contextlib.redirect_stdout(out):
+            print('Sign in to SoundCloud in your browser: https://secure.soundcloud.com/authorize?b=2')
+        self.assertEqual(job['signin']['service'], 'SoundCloud')
+        out.write('Sign in to Spotify in your browser: https://evil.example/\n')
+        self.assertIsNone(job['signin'])
+        self.assertEqual(job['lines'][-1], 'Sign in to Spotify in your browser: https://evil.example/')
+
+    def test_the_song_base_switch_is_saved(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop('DORIEPLAY_SONGBASE')
+            self.assertEqual(self.call('/api/settings', {'songbase': False}),
+                             (200, {'songbase': {'on': False, 'locked': False}}))
+            self.assertEqual(json.loads(dorieplay.SETTINGS.read_text(encoding='utf-8')), {'songbase': False})
+            self.assertEqual(self.call('/api/state')[1]['songbase'], {'on': False, 'locked': False})
+            self.assertEqual(self.call('/api/settings', {'songbase': 'no'})[0], 400)
+        self.assertEqual(self.call('/api/settings', {'songbase': True})[0], 409)   # '' from setUp: locked
+
+    def test_state_works_without_a_time_zone_database(self):   # Windows without tzdata
+        with mock.patch.object(server, 'ZoneInfo', side_effect=ZoneInfoNotFoundError('America/Los_Angeles')):
+            status, state = self.call('/api/state')
+        self.assertEqual(status, 200)
+        self.assertIsInstance(state['youtube_searches_left'], int)
+
+    def test_a_second_copy_cannot_open_the_same_port(self):
+        # Passes on macOS even without ExclusiveBind; it proves the fix only on Windows (CI, plan 2).
+        with tempfile.TemporaryDirectory() as folder, self.assertRaises(OSError):
+            server.serve(server.App(Path(folder) / 'plans', demo=True), self.port)
+
     def test_search_review_and_transfer(self):
         name = self.planned()
         plan = self.call(f'/api/plans/{name}')[1]
@@ -179,6 +242,71 @@ class Flow(ServerCase):
         self.assertEqual(self.call('/api/plans/nothing-here/apply', {})[0], 404)
 
 
+class Version(ServerCase):
+    def requests_stub(self, get):
+        stub = types.ModuleType('requests')
+        stub.get = get
+        patch = mock.patch.dict(sys.modules, {'requests': stub})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_only_a_higher_version_counts(self):
+        self.assertTrue(version.newer('1.0.1', '1.0.0'))
+        self.assertTrue(version.newer('1.10.0', '1.9.9'))
+        self.assertFalse(version.newer('1.0.0', '1.0.0'))
+        self.assertFalse(version.newer('0.9.9', '1.0.0'))
+        self.assertFalse(version.newer(None))
+
+    def test_the_latest_version_is_read_from_the_release_tag(self):
+        answers = []
+
+        def get(url, timeout, headers):
+            answer = answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return types.SimpleNamespace(json=lambda: answer, raise_for_status=lambda: None)
+
+        self.requests_stub(get)
+        answers[:] = [{'tag_name': 'v1.2.0'}, {'tag_name': 'banana'}, OSError('offline'), ['not', 'a', 'dict']]
+        self.assertEqual(version.latest(), '1.2.0')
+        self.assertIsNone(version.latest())
+        self.assertIsNone(version.latest())
+        self.assertIsNone(version.latest())
+
+    def test_the_demo_never_asks_and_the_page_gets_the_version(self):
+        self.requests_stub(lambda *args, **kwargs: self.fail('the demo asked GitHub'))
+        version.check(self.app)
+        state = self.call('/api/state')[1]
+        self.assertEqual((state['version'], state['update']), ('1.0.0', None))
+
+
+class DemoApp(unittest.TestCase):
+    def test_the_demo_switches_the_song_base_off(self):
+        environment = mock.patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop('DORIEPLAY_SONGBASE', None)
+        real = dict(platforms.PLATFORMS)
+        self.addCleanup(lambda: (platforms.PLATFORMS.clear(), platforms.PLATFORMS.update(real)))
+        for name in ('CACHE', 'SETTINGS'):
+            self.addCleanup(setattr, dorieplay, name, getattr(dorieplay, name))
+        self.addCleanup(setattr, server.JobOutput, 'echo', True)
+        server.JobOutput.echo = False
+        with mock.patch.object(songbase.urllib.request, 'urlopen') as ask:
+            app = server.make_app(True)
+            self.addCleanup(shutil.rmtree, app.plans.parent, True)
+            self.assertEqual(os.environ['DORIEPLAY_SONGBASE'], '')
+            self.assertEqual(dorieplay.songbase_url(), '')
+            platforms.PLATFORMS.update(demo.platforms_for_demo(delay=0))
+            app.start_plan(LINK, 'youtube')
+            for _ in range(200):
+                if not app.busy():
+                    break
+                time.sleep(0.05)
+            self.assertEqual(app.job['state'], 'done')
+            ask.assert_not_called()
+
+
 class Keys(unittest.TestCase):
     """The set-up page saves keys next to the program; here, in a temporary folder instead."""
 
@@ -210,7 +338,8 @@ class Keys(unittest.TestCase):
         self.assertFalse(self.app.connection(spotify)['key'])
         self.assertTrue(self.app.save_key('spotify', ' ' + 'AB12' * 8 + ' ')['key'])
         self.assertEqual(json.loads(spotify.CLIENT_FILE.read_text()), {'client_id': 'ab12' * 8})
-        self.assertEqual(spotify.CLIENT_FILE.stat().st_mode & 0o777, 0o600)
+        if os.name != 'nt':   # Windows keeps no such modes
+            self.assertEqual(spotify.CLIENT_FILE.stat().st_mode & 0o777, 0o600)
         self.assertEqual(spotify.client_id(), 'ab12' * 8)
         self.refused(409, 'spotify', 'cd34' * 8)
         self.app.save_key('spotify', 'cd34' * 8, True)

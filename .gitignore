@@ -12,6 +12,8 @@ plans/
 # personal project notes for the AI assistant: kept locally, not published
 CLAUDE.md
 .claude/
+# design notes and plans: personal details, kept locally
+design/
 .DS_Store
 # the song base (built from the Discogs dump, hundreds of MB) and the dump itself
 *.sqlite

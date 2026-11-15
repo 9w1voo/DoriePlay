@@ -3,19 +3,25 @@ retries and limits are handled. No network, no keys; the real key and token file
 
 Run from the project folder:  python -m unittest discover tests
 """
+import contextlib
 import io
 import json
+import socket
 import sys
 import tempfile
+import threading
+import time
 import types
 import unittest
+import urllib.request
 from pathlib import Path
 from unittest import mock
+from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import platforms  # noqa: E402
-from platforms import deezer, soundcloud, spotify, youtube  # noqa: E402
+from platforms import deezer, signin, soundcloud, spotify, youtube  # noqa: E402
 
 
 class SpotifyException(Exception):
@@ -66,6 +72,96 @@ class PlatformCase(unittest.TestCase):
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
+
+
+# --- Shared browser sign-in ------------------------------------------------------------------------
+
+def free_port():
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1', 0))
+        return probe.getsockname()[1]
+
+
+class SignIn(unittest.TestCase):
+    AUTH = 'https://accounts.spotify.com/authorize?x=1'
+
+    def wait(self, *queries, port=None, **options):
+        """wait_for_code with a stand-in browser that sends each query to the redirect in turn.
+        Every call gets its own port: on Windows a port can stay in TIME_WAIT after a connection."""
+        redirect = f'http://127.0.0.1:{port or free_port()}/callback'
+        self.pages, threads, output = [], [], io.StringIO()
+
+        def browse():
+            for query in queries:
+                try:
+                    with urllib.request.urlopen(f'{redirect}?{query}', timeout=10) as page:
+                        self.pages.append(page.read().decode())
+                except OSError as error:
+                    self.pages.append(repr(error))
+
+        def open_url(url):
+            threads.append(threading.Thread(target=browse))
+            threads[-1].start()
+
+        try:
+            with mock.patch.object(signin, 'open_url', open_url), contextlib.redirect_stdout(output):
+                return signin.wait_for_code('Spotify', self.AUTH, redirect, 'ours', **options)
+        finally:
+            for thread in threads:
+                thread.join(10)
+            self.output = output.getvalue()
+
+    def test_the_code_comes_back_through_the_redirect(self):
+        self.assertEqual(self.wait('code=abc&state=ours'), 'abc')
+        self.assertIn('Sign in to Spotify in your browser: ' + self.AUTH, self.output)
+        self.assertIn('Signed in to Spotify.', self.output)
+        self.assertIn('Signed in to Spotify. You can close this tab', self.pages[0])
+
+    def test_an_old_tab_is_ignored_and_a_refusal_is_an_error(self):
+        self.assertEqual(self.wait('code=zzz&state=old', 'code=zzz', 'code=abc&state=ours'), 'abc')
+        self.assertIn('out of date', self.pages[0])
+        self.assertIn('out of date', self.pages[1])
+        self.assertEqual(self.wait('error=access_denied&state=old', 'code=abc&state=ours'), 'abc')
+        with self.assertRaisesRegex(PermissionError, 'access_denied'):
+            self.wait('error=access_denied&state=ours')
+        self.assertIn('Spotify', self.pages[0])   # the browser got an answer before the error
+
+    def test_an_abandoned_sign_in_ends_and_frees_the_port(self):
+        port = free_port()
+
+        def silent(url):   # connects and never sends a request
+            connection = socket.create_connection(('127.0.0.1', port))
+            self.addCleanup(connection.close)
+
+        started = time.monotonic()
+        with mock.patch.object(signin, 'READ_TIMEOUT', 1), mock.patch.object(signin, 'open_url', silent), \
+                contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(PermissionError, 'not finished'):
+                signin.wait_for_code('Spotify', self.AUTH, f'http://127.0.0.1:{port}/callback', 'ours', timeout=1)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertEqual(self.wait('code=abc&state=ours', port=port), 'abc')
+
+    def test_a_busy_port_is_named(self):
+        port = free_port()
+        blocker = socket.socket()
+        self.addCleanup(blocker.close)
+        blocker.bind(('127.0.0.1', port))
+        blocker.listen()
+        with self.assertRaisesRegex(ValueError, 'the port is busy'):
+            self.wait('code=abc&state=ours', port=port)
+        self.assertNotIn('Sign in to', self.output)   # no link is shown while nothing can receive the answer
+
+    def test_only_a_sign_in_line_for_a_known_service_and_host_becomes_a_link(self):
+        ok = 'Sign in to YouTube in your browser: https://accounts.google.com/o/oauth2/auth?a=1'
+        self.assertEqual(signin.parse(ok), {'service': 'YouTube', 'url': ok.split(': ', 1)[1]})
+        for bad in ('Sign in to Spotify in your browser: https://evil.example/a',
+                    'Sign in to Spotify in your browser: http://accounts.spotify.com/authorize',
+                    'Sign in to Spotify in your browser: https://accounts.spotify.com.evil.example/',
+                    'Sign in to Tidal in your browser: https://accounts.spotify.com/authorize',
+                    'x Sign in to Spotify in your browser: https://accounts.spotify.com/authorize',
+                    'Sign in to Spotify in your browser: https://[accounts.spotify.com/',
+                    'Artist — Song: 0.91 / approved'):
+            self.assertIsNone(signin.parse(bad), bad)
 
 
 # --- Spotify ---------------------------------------------------------------------------------------
@@ -153,6 +249,82 @@ class Request:
         return outcome
 
 
+class SpotifyOauthError(Exception):
+    def __init__(self, message, error=None, error_description=None):
+        super().__init__(message)
+        self.error, self.error_description = error, error_description
+
+
+class SpotifyPKCE:
+    """The SpotifyPKCE methods our subclass builds on; validate_token raises `error` when one is set."""
+    error = None
+
+    def __init__(self, **options):
+        self.options = options
+
+    def get_authorize_url(self, state=None):
+        return f'https://accounts.spotify.com/authorize?state={state}'
+
+    def validate_token(self, token_info):
+        if self.error:
+            raise self.error
+        return token_info
+
+    def get_authorization_code(self, response=None):
+        return 'parsed'
+
+
+class SpotifySignIn(PlatformCase):
+    def setUp(self):
+        super().setUp()
+        errors = types.ModuleType('spotipy.exceptions')
+        errors.SpotifyException, errors.SpotifyOauthError = SpotifyException, SpotifyOauthError
+        oauth2 = types.ModuleType('spotipy.oauth2')
+        oauth2.SpotifyPKCE = SpotifyPKCE
+        patch = mock.patch.dict(sys.modules, {'spotipy.exceptions': errors, 'spotipy.oauth2': oauth2})
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.auth = spotify._auth_manager('id1')
+        spotify.TOKEN_FILE.write_text('{}', encoding='utf-8')
+
+    def test_a_dead_refresh_token_means_signing_in_again(self):
+        self.auth.error = SpotifyOauthError('x', error='invalid_grant')
+        self.assertIsNone(self.auth.validate_token({'refresh_token': 'r'}))
+        self.assertFalse(spotify.TOKEN_FILE.exists())
+        self.assertIn('no longer valid', sys.stdout.getvalue())
+
+    def test_other_token_errors_are_not_hidden(self):
+        self.auth.error = SpotifyOauthError('x', error='server_error')
+        with self.assertRaises(SpotifyOauthError):
+            self.auth.validate_token({'refresh_token': 'r'})
+        self.assertTrue(spotify.TOKEN_FILE.exists())
+
+    def test_sign_in_waits_for_our_redirect_with_a_state(self):
+        self.assertEqual(self.auth.options, {'client_id': 'id1', 'redirect_uri': spotify.REDIRECT_URI,
+                                             'scope': spotify.SCOPES, 'cache_path': str(spotify.TOKEN_FILE)})
+        waits = []
+
+        def wait_for_code(label, auth_url, redirect_uri, state):
+            waits.append((label, auth_url, redirect_uri, state))
+            return 'c'
+
+        with mock.patch.object(signin, 'wait_for_code', wait_for_code):
+            self.assertEqual(self.auth.get_authorization_code(), 'c')
+        [(label, auth_url, redirect, state)] = waits
+        self.assertEqual((label, redirect), ('Spotify', spotify.REDIRECT_URI))
+        self.assertGreaterEqual(len(state), 16)
+        self.assertIn(f'state={state}', auth_url)
+        self.assertEqual(self.auth.get_authorization_code('http://127.0.0.1:8888/callback?code=1'), 'parsed')
+
+    def test_nothing_is_printed_between_creating_a_playlist_and_returning_its_id(self):
+        events = []
+        api = types.SimpleNamespace(_post=lambda url, payload: events.append('post') or {'id': 'pid'})
+        with mock.patch.object(spotify, '_client', api), \
+                mock.patch('builtins.print', lambda *args, **kwargs: events.append('print')):
+            self.assertEqual(spotify.create_playlist('x'), 'pid')
+        self.assertEqual(events, ['print', 'post'])
+
+
 class YouTubeApi:
     def __init__(self, inserts=None, listing=None, videos=None):
         self.script, self.listing, self.known = inserts or {}, listing, videos or {}
@@ -183,6 +355,70 @@ class YouTubeApi:
 def video(video_id, title, channel='Artist'):
     return {'id': video_id, 'snippet': {'title': title, 'channelTitle': channel},
             'contentDetails': {'duration': 'PT3M20S'}}
+
+
+class WSGITimeoutError(AttributeError):   # google_auth_oauthlib.flow's, an AttributeError there too
+    pass
+
+
+class YouTubeSignIn(PlatformCase):
+    LINK = 'https://accounts.google.com/o/oauth2/auth?a=1'
+
+    def setUp(self):
+        super().setUp()
+        self.options, self.opened, self.times_out = [], [], False
+        test = self
+
+        class InstalledAppFlow:
+            @classmethod
+            def from_client_secrets_file(cls, path, scopes):
+                return cls()
+
+            def authorization_url(self, **kwargs):
+                return test.LINK, 's'
+
+            def run_local_server(self, **options):
+                test.options.append(options)
+                self.authorization_url()
+                if test.times_out:
+                    raise WSGITimeoutError('Timed out waiting for response from authorization server')
+                return types.SimpleNamespace(to_json=lambda: '{"token": "t"}')
+
+        names = ('google_auth_oauthlib.flow', 'google.oauth2.credentials', 'google.auth.transport.requests',
+                 'google.auth.exceptions', 'googleapiclient.discovery')
+        modules = {name: types.ModuleType(name) for name in names}
+        modules['google_auth_oauthlib.flow'].InstalledAppFlow = InstalledAppFlow
+        modules['google_auth_oauthlib.flow'].WSGITimeoutError = WSGITimeoutError
+        modules['google.oauth2.credentials'].Credentials = object
+        modules['google.auth.transport.requests'].Request = object
+        modules['google.auth.exceptions'].RefreshError = type('RefreshError', (Exception,), {})
+        modules['googleapiclient.discovery'].build = lambda *args, **kwargs: 'api'
+        for patch in (mock.patch.dict(sys.modules, modules), mock.patch.object(youtube, '_client', None),
+                      mock.patch.object(signin, 'open_url', self.opened.append)):
+            patch.start()
+            self.addCleanup(patch.stop)
+        youtube.CLIENT_FILE.write_text('{}', encoding='utf-8')
+
+    def test_sign_in_goes_through_the_page_link_and_the_system_browser(self):
+        self.assertEqual(youtube.client(), 'api')
+        self.assertEqual(self.options, [{'port': 0, 'open_browser': False, 'authorization_prompt_message': None,
+                                         'timeout_seconds': 300}])
+        output = sys.stdout.getvalue()
+        self.assertIn(f'Sign in to YouTube in your browser: {self.LINK}', output)
+        self.assertLess(output.index('Sign in to YouTube'), output.index('Signed in to YouTube.'))
+        self.assertEqual(self.opened, [self.LINK])
+        self.assertEqual(youtube.TOKEN_FILE.read_text(encoding='utf-8'), '{"token": "t"}')
+
+    def test_an_unfinished_sign_in_ends_with_a_plain_message(self):
+        self.times_out = True
+        with self.assertRaisesRegex(PermissionError, 'not finished'):
+            youtube.client()
+        self.assertFalse(youtube.TOKEN_FILE.exists())
+
+    def test_a_missing_key_points_to_the_set_up_page(self):
+        youtube.CLIENT_FILE.unlink()
+        with self.assertRaisesRegex(ValueError, 'Services → Set up'):
+            youtube.client()
 
 
 class YouTube(PlatformCase):
@@ -271,6 +507,26 @@ class SoundCloud(PlatformCase):
         with self.assertRaisesRegex(ValueError, 'at most 500'):
             soundcloud.add_items('soundcloud:playlists:9', [(u, u) for u in urns(1000, 2)])
         self.assertEqual(api.puts, [])
+
+    def test_sign_in_uses_the_shared_wait_with_pkce_and_state(self):
+        soundcloud.CLIENT_FILE.write_text(json.dumps({'client_id': 'id1', 'client_secret': 's1'}), encoding='utf-8')
+        waits, requests = [], []
+
+        def wait_for_code(label, auth_url, redirect_uri, state):
+            waits.append((label, auth_url, redirect_uri, state))
+            return 'code1'
+
+        with mock.patch.object(signin, 'wait_for_code', wait_for_code), \
+                mock.patch.object(soundcloud, '_token_request', lambda fields: requests.append(fields) or {}):
+            soundcloud._login()
+        [(label, auth_url, redirect, state)] = waits
+        self.assertEqual(label, 'SoundCloud')
+        self.assertEqual(urlparse(auth_url).hostname, 'secure.soundcloud.com')
+        self.assertEqual(parse_qs(urlparse(auth_url).query)['state'], [state])
+        self.assertEqual(redirect, soundcloud.DEFAULT_REDIRECT)
+        [fields] = requests
+        self.assertEqual((fields['grant_type'], fields['code']), ('authorization_code', 'code1'))
+        self.assertTrue(fields['code_verifier'])
 
     def test_the_token_is_never_sent_outside_soundcloud(self):
         for url in ('https://evil.example/x', 'http://api.soundcloud.com/x', 'https://soundcloud.com.evil.example/'):

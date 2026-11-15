@@ -1,6 +1,6 @@
 """SoundCloud via the public API (OAuth 2.1 with PKCE).
 
-Credentials come from soundcloud-client.json in the project folder:
+Credentials come from soundcloud-client.json in the data folder (paths.py):
   {"client_id": "...", "client_secret": "...", "redirect_uri": "http://127.0.0.1:8890/callback"}
 SoundCloud issues them only to Artist Pro subscribers (soundcloud.com/you/apps).
 The redirect URI must be registered on that page exactly as written in the file.
@@ -16,29 +16,27 @@ API facts used here (github.com/soundcloud/api, openapi/api.yaml):
 """
 import base64
 import hashlib
-import html
 import json
 import re
 import secrets
 import time
-import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import urlencode, urlparse
 
+import paths
 from matching import gather, parse_video, queries
+
+from . import signin
 
 NAME = 'soundcloud'
 LABEL = 'SoundCloud'
 API = 'https://api.soundcloud.com'
 AUTHORIZE = 'https://secure.soundcloud.com/authorize'
 TOKEN_URL = 'https://secure.soundcloud.com/oauth/token'
-ROOT = Path(__file__).resolve().parent.parent   # key and token live next to the program
+ROOT = paths.data_folder()   # key and token live in the data folder
 CLIENT_FILE = ROOT / 'soundcloud-client.json'
 TOKEN_FILE = ROOT / '.soundcloud-token.json'
 DEFAULT_REDIRECT = 'http://127.0.0.1:8890/callback'
 MAX_PLAYLIST_TRACKS = 500   # SoundCloud's limit per playlist
-LOGIN_TIMEOUT = 300         # seconds to wait for the browser sign-in
 ALL_ACCESS = 'playable,preview,blocked'
 _token = None
 
@@ -74,8 +72,8 @@ def playlist_url(urn):
 
 def _client():
     if not CLIENT_FILE.exists():
-        raise ValueError('Create soundcloud-client.json with client_id, client_secret and redirect_uri '
-                         '(see README). SoundCloud gives API keys to Artist Pro subscribers.')
+        raise ValueError('Add your SoundCloud app on the start page (Services → Set up). '
+                         'SoundCloud gives API keys to Artist Pro subscribers.')
     data = json.loads(CLIENT_FILE.read_text(encoding='utf-8'))
     data.setdefault('redirect_uri', DEFAULT_REDIRECT)
     return data
@@ -103,53 +101,16 @@ def _token_request(fields):
 
 
 def _login():
-    """Authorization Code + PKCE through a one-shot local web server on the redirect URI."""
+    """Authorization Code + PKCE; the browser comes back to the redirect URI (platforms.signin)."""
     app = _client()
-    redirect = urlparse(app['redirect_uri'])
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
     state = secrets.token_urlsafe(16)
     url = AUTHORIZE + '?' + urlencode({
         'client_id': app['client_id'], 'redirect_uri': app['redirect_uri'], 'response_type': 'code',
         'code_challenge': challenge, 'code_challenge_method': 'S256', 'state': state})
-    result = {}
-
-    class Callback(BaseHTTPRequestHandler):
-        def do_GET(self):
-            query = parse_qs(urlparse(self.path).query)
-            if urlparse(self.path).path != (redirect.path or '/'):
-                self.send_response(404), self.end_headers()
-                return
-            result.update({k: v[0] for k, v in query.items()})
-            ok = 'code' in result and result.get('state') == state
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html; charset=utf-8')
-            self.end_headers()
-            message = 'SoundCloud connected. You can close this tab.' if ok else 'SoundCloud sign-in failed.'
-            self.wfile.write(f'<p>{html.escape(message)}</p>'.encode())
-
-        def log_message(self, *args):
-            pass
-
-    try:
-        server = HTTPServer((redirect.hostname, redirect.port or 80), Callback)
-    except OSError as error:
-        raise ValueError(f'Cannot wait for the SoundCloud sign-in on {redirect.hostname}:{redirect.port or 80} '
-                         f'({error.strerror}). Another run is probably still waiting for a sign-in: '
-                         'stop it and try again.') from error
-    server.timeout = 1
-    print('Please visit this URL to authorize SoundCloud:', url)
-    webbrowser.open(url)
-    deadline = time.time() + LOGIN_TIMEOUT
-    while 'code' not in result and 'error' not in result and time.time() < deadline:
-        server.handle_request()
-    server.server_close()
-    if 'code' not in result and 'error' not in result:
-        raise PermissionError(f'SoundCloud sign-in was not finished within {LOGIN_TIMEOUT // 60} minutes. '
-                              'Open the link above in a browser on this computer and run the command again.')
-    if result.get('state') != state or 'code' not in result:
-        raise PermissionError(f"SoundCloud sign-in failed: {result.get('error_description') or result.get('error') or 'state mismatch'}")
-    return _token_request({'grant_type': 'authorization_code', 'code': result['code'],
+    code = signin.wait_for_code(LABEL, url, app['redirect_uri'], state)
+    return _token_request({'grant_type': 'authorization_code', 'code': code,
                            'redirect_uri': app['redirect_uri'], 'code_verifier': verifier})
 
 

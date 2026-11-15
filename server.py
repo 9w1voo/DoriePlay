@@ -3,7 +3,7 @@
   python server.py          real services (keys and sign-in exactly as for dorieplay.py)
   python server.py --demo   invented playlist and fake services, to look around without keys
 
-It listens on 127.0.0.1 only. Plans live in the plans/ folder next to the program.
+It listens on 127.0.0.1 only. Plans live in the plans/ folder in the data folder (paths.py).
 """
 import argparse
 import contextlib
@@ -16,17 +16,19 @@ import tempfile
 import threading
 import time
 import types
-import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import dorieplay
+import paths
 import platforms
+import version
+from platforms import signin
 
-ROOT = Path(__file__).resolve().parent
-WEB = ROOT / 'web'
+WEB = Path(__file__).resolve().parent / 'web'   # the page: part of the program, read only
+PLANS = paths.data_folder() / 'plans'
 STATIC = {'/': ('index.html', 'text/html'), '/app.css': ('app.css', 'text/css'),
           '/app.js': ('app.js', 'text/javascript'), '/i18n.js': ('i18n.js', 'text/javascript'),
           '/logo.svg': ('logo.svg', 'image/svg+xml')}
@@ -78,10 +80,16 @@ class JobOutput:
         self.job, self.rest = job, ''
 
     def write(self, text):
-        if self.echo:   # sign-in links and messages stay visible in the terminal too
-            sys.__stdout__.write(text)
+        if self.echo and sys.__stdout__ is not None:   # sign-in links stay visible in the terminal too
+            # A windowed app on Windows has no console, and a cp1252 console cannot print every title.
+            with contextlib.suppress(OSError, ValueError):
+                sys.__stdout__.write(text)
         *lines, self.rest = (self.rest + text).split('\n')
         for line in filter(None, lines):
+            found = signin.parse(line)
+            self.job['signin'] = found   # any other line means the sign-in is over
+            if found:
+                continue
             self.job['lines'] = (self.job['lines'] + [line])[-6:]
             if self.job['kind'] == 'apply' and line.startswith('Added:'):
                 self.job['done'] += 1
@@ -96,10 +104,11 @@ class App:
 
     def __init__(self, plans_dir, demo=False):
         self.plans, self.demo = Path(plans_dir), demo
-        self.plans.mkdir(parents=True, exist_ok=True)
+        self.plans.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.token = secrets.token_urlsafe(24)
         self.lock = threading.RLock()
         self.job = None
+        self.update = None   # {'version'} when a newer release is out (version.check)
 
     # --- plans ---------------------------------------------------------------------------------
 
@@ -139,7 +148,22 @@ class App:
         return {'demo': self.demo, 'job': self.job, 'plans': self.summaries(),
                 'platforms': [{'name': p.NAME, 'label': p.LABEL, **self.connection(p)}
                               for p in platforms.PLATFORMS.values()],
-                'youtube_searches_left': self.youtube_searches_left()}
+                'youtube_searches_left': self.youtube_searches_left(), 'songbase': self.songbase(),
+                'version': version.VERSION, 'update': self.update}
+
+    @staticmethod
+    def songbase():
+        return {'on': bool(dorieplay.songbase_url()), 'locked': 'DORIEPLAY_SONGBASE' in os.environ}
+
+    def save_settings(self, body):
+        """The page's switches; for now only whether the song base is asked."""
+        if not isinstance(body.get('songbase'), bool):
+            raise ApiError(400, 'Invalid request.')
+        if 'DORIEPLAY_SONGBASE' in os.environ:
+            raise ApiError(409, 'DORIEPLAY_SONGBASE is set where the program was started, and it wins over this switch.')
+        with self.lock:
+            dorieplay.save_settings({'songbase': body['songbase']})
+        return {'songbase': self.songbase()}
 
     def connection(self, platform):
         """Whether the key and a saved sign-in are in place; a guess from files, nothing is contacted."""
@@ -149,7 +173,7 @@ class App:
         return {'key': bool(key), 'signed_in': platform.TOKEN_FILE.exists()}
 
     def save_key(self, name, value, replace=False):
-        """The set-up page: check that a pasted key has the right shape and save it next to the program,
+        """The set-up page: check that a pasted key has the right shape and save it in the data folder,
         readable only by this user. The value is never sent back, printed or logged; whether the key
         really works shows at the first sign-in. A saved sign-in belongs to the old key (YouTube's
         token even carries the old client inside), so it is removed: the next use signs in again."""
@@ -184,7 +208,13 @@ class App:
     def youtube_searches_left(self):
         """An estimate from the search cache: searches made since midnight Pacific time, when YouTube
         resets its limit. Searches made by other programs with the same key are not seen."""
-        reset = datetime.now(ZoneInfo('America/Los_Angeles')).replace(hour=0, minute=0, second=0).timestamp()
+        try:
+            pacific = ZoneInfo('America/Los_Angeles')
+        except ZoneInfoNotFoundError:
+            # shortcut: without a time zone database (Windows without tzdata) Pacific standard time is used,
+            # an hour off in summer; tzdata is in requirements.txt
+            pacific = timezone(timedelta(hours=-8))
+        reset = datetime.now(pacific).replace(hour=0, minute=0, second=0).timestamp()
         try:
             cache = json.loads(dorieplay.CACHE.read_text(encoding='utf-8'))
             used = sum(1 for key, entry in cache.items() if key.startswith('youtube|') and entry['at'] >= reset)
@@ -305,7 +335,7 @@ class App:
 
     def run(self, kind, name, work):
         job = self.job = {'kind': kind, 'plan': name, 'state': 'running', 'done': 0, 'total': 0,
-                          'lines': [], 'error': '', 'result': None}
+                          'lines': [], 'error': '', 'result': None, 'signin': None}
 
         def target():
             try:
@@ -374,6 +404,8 @@ def make_handler(app, port):
                     return self.reply(200, app.start_apply(parts[1]))
                 if method == 'POST' and len(parts) == 3 and parts[0] == 'plans' and parts[2] == 'check':
                     return self.reply(200, app.start_check(parts[1]))
+                if (method, parts) == ('POST', ['settings']):
+                    return self.reply(200, app.save_settings(body))
                 if method == 'POST' and len(parts) == 2 and parts[0] == 'keys':
                     return self.reply(200, app.save_key(parts[1], body.get('value'), body.get('replace') is True))
                 raise ApiError(404, 'Not found.')
@@ -394,11 +426,29 @@ def make_handler(app, port):
     return Handler
 
 
+class _Server(signin.ExclusiveBind, ThreadingHTTPServer):
+    """On Windows a second copy must not share the port (see signin.ExclusiveBind)."""
+
+
 def serve(app, port=0):
     """(server, port). Port 0 lets the system pick a free one (tests)."""
-    server = ThreadingHTTPServer(('127.0.0.1', port), BaseHTTPRequestHandler)
+    server = _Server(('127.0.0.1', port), BaseHTTPRequestHandler)
     server.RequestHandlerClass = make_handler(app, server.server_address[1])
     return server, server.server_address[1]
+
+
+def make_app(demo):
+    """The app over the real services, or over invented ones in a scratch folder (--demo)."""
+    if not demo:
+        return App(PLANS)
+    import demo as fake
+    platforms.PLATFORMS.clear()
+    platforms.PLATFORMS.update(fake.platforms_for_demo())
+    scratch = Path(tempfile.mkdtemp(prefix='dorieplay-demo-'))
+    dorieplay.CACHE = scratch / 'cache.json'   # the demo neither reads nor fills the real cache
+    dorieplay.SETTINGS = scratch / 'settings.json'
+    os.environ['DORIEPLAY_SONGBASE'] = ''   # invented songs: never ask the real song base
+    return App(scratch / 'plans', demo=True)
 
 
 def main():
@@ -407,15 +457,8 @@ def main():
     parser.add_argument('--port', type=int, default=8765, help='Not 8888 or 8890: sign-in uses those')
     parser.add_argument('--no-browser', action='store_true', help='Do not open the page automatically')
     args = parser.parse_args()
-    if args.demo:
-        import demo
-        platforms.PLATFORMS.clear()
-        platforms.PLATFORMS.update(demo.platforms_for_demo())
-        scratch = Path(tempfile.mkdtemp(prefix='dorieplay-demo-'))
-        dorieplay.CACHE = scratch / 'cache.json'   # the demo neither reads nor fills the real cache
-        app = App(scratch / 'plans', demo=True)
-    else:
-        app = App(ROOT / 'plans')
+    paths.ensure(paths.data_folder())
+    app = make_app(args.demo)
     try:
         server, port = serve(app, args.port)
     except OSError as error:
@@ -424,7 +467,7 @@ def main():
     url = f'http://127.0.0.1:{port}/'
     print(f'Dorie Play{" (demo)" if args.demo else ""}: {url}\nStop with Ctrl+C.', flush=True)
     if not args.no_browser:
-        webbrowser.open(url)
+        signin.open_url(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

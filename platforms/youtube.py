@@ -2,13 +2,15 @@
 import json
 import re
 import time
-from pathlib import Path
 
+import paths
 from matching import parse_video, queries
+
+from . import signin
 
 NAME = 'youtube'
 LABEL = 'YouTube'
-ROOT = Path(__file__).resolve().parent.parent   # key and token live next to the program
+ROOT = paths.data_folder()   # key and token live in the data folder
 CLIENT_FILE = ROOT / 'google-client.json'
 TOKEN_FILE = ROOT / '.youtube-token.json'
 _client = None
@@ -41,7 +43,7 @@ def _reason(error):
 
 
 QUOTA_REASONS = ('quotaExceeded', 'dailyLimitExceeded')   # not rateLimitExceeded: that one passes in seconds
-QUOTA_MESSAGE = ('YouTube daily limit is used up. Run the same command again after it resets '
+QUOTA_MESSAGE = ('YouTube’s daily limit is used up. Start the same task again after it resets '
                  '(midnight Pacific time, 09:00 in Amsterdam); it continues where it stopped.')
 
 
@@ -57,7 +59,7 @@ def client():
     global _client
     if _client:
         return _client
-    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google_auth_oauthlib.flow import InstalledAppFlow, WSGITimeoutError
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
     from google.auth.exceptions import RefreshError
@@ -73,9 +75,21 @@ def client():
             creds = None
     if not creds or not creds.valid:
         if not CLIENT_FILE.exists():
-            raise ValueError(f'{CLIENT_FILE} is missing. Download the OAuth "Desktop app" client JSON from '
-                             'Google Cloud Console and save it under that name (see README).')
-        creds = InstalledAppFlow.from_client_secrets_file(str(CLIENT_FILE), scopes).run_local_server(port=0)
+            raise ValueError('Add your Google "Desktop app" OAuth client on the start page (Services → Set up).')
+
+        class Flow(InstalledAppFlow):
+            def authorization_url(self, **kwargs):   # the link goes to the page and the system browser
+                url, state = super().authorization_url(**kwargs)
+                signin.ask(LABEL, url)
+                return url, state
+
+        try:
+            creds = Flow.from_client_secrets_file(str(CLIENT_FILE), scopes).run_local_server(
+                port=0, open_browser=False, authorization_prompt_message=None, timeout_seconds=signin.TIMEOUT)
+        except WSGITimeoutError as error:
+            raise PermissionError(f'YouTube sign-in was not finished within {signin.TIMEOUT // 60} minutes. '
+                                  'Start again and finish signing in in the browser on this computer.') from error
+        print(f'Signed in to {LABEL}.')
     token.touch(mode=0o600, exist_ok=True)
     token.chmod(0o600)
     token.write_text(creds.to_json(), encoding='utf-8')

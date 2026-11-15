@@ -76,6 +76,7 @@ button { font: inherit; color: inherit; }
 }
 .brand { display: flex; align-items: center; gap: 10px; font: 700 1.1rem var(--font); text-decoration: none; letter-spacing: -0.025em; }
 .brand-mark { display: block; width: 28px; height: 28px; border-radius: 7px; box-shadow: 0 4px 12px rgb(0 0 0 / 0.25); }
+.version { align-self: flex-end; margin-bottom: 3px; color: var(--muted); font: 500 0.72rem var(--font); letter-spacing: 0; }
 .top-right { display: flex; align-items: center; gap: 8px; }
 .lang { padding: 7px 10px; border: 1px solid var(--glass-edge); border-radius: 99px; background: var(--surface); color: var(--text); font: 0.85rem var(--font); cursor: pointer; }
 .themes { display: flex; gap: 4px; padding: 3px; border-radius: 99px; box-shadow: var(--glass-shine); }
@@ -147,6 +148,8 @@ textarea.link-input.multi { border-radius: 22px; }
 .key-text { width: 100%; padding: 12px 16px; border: 1px solid var(--glass-edge); border-radius: var(--radius-s); background: var(--glass-sunk); color: var(--text); font: 0.85rem var(--mono); resize: vertical; }
 .key-text:focus { border-color: var(--accent); outline: none; }
 .setup-replace { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; }
+.songbase { display: grid; gap: 4px; }
+.songbase-switch { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .dot { font-size: 0.86rem; color: var(--muted); }
 .dot::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: var(--none); }
@@ -215,6 +218,8 @@ button.stat:hover { transform: translateY(-1px); }
 .job-count { font: 700 1.4rem var(--font); font-variant-numeric: tabular-nums; }
 .job-line { color: var(--muted); font-size: 0.88rem; min-height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .job.bad { border-color: var(--accent); }
+.signin { display: grid; gap: 10px; justify-items: start; }
+.signin-link { font: 0.88rem var(--mono); text-overflow: ellipsis; }
 .job-error { font-family: var(--mono); font-size: 0.9rem; overflow-wrap: anywhere; }
 .done { border-color: var(--ok); justify-items: start; }
 .skipped { display: grid; gap: 6px; }

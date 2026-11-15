@@ -52,5 +52,19 @@ class Texts(unittest.TestCase):
         self.assertEqual([line for line in code if re.search('[А-Яа-яІіЇїЄєҐґ]', line)], [])
 
 
+class Links(unittest.TestCase):
+    def test_every_outside_link_opens_in_the_system_browser(self):
+        page = (WEB / 'app.js').read_text(encoding='utf-8')
+        links = re.findall(r"el\('a', \{([^}]*)\}", page)
+        self.assertGreater(len(links), 8)
+        for attrs in links:
+            if re.search(r"href: ['`]#", attrs):
+                continue
+            self.assertIn("target: '_blank'", attrs, attrs)
+            self.assertIn("rel: 'noopener noreferrer'", attrs, attrs)
+        html = (WEB / 'index.html').read_text(encoding='utf-8')
+        self.assertEqual(re.findall(r'<a [^>]*href="(?!#)', html), [])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -246,6 +246,8 @@ function home() {
     hint, fromFile, chooser);
 
   const view = el('div', { class: 'home' },
+    S.state.update && el('div', { class: 'banner' }, `${t('updateText', { version: S.state.update.version })} `,
+      el('a', { href: RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('updateLink') })),
     S.state.demo && el('div', { class: 'banner' },
       el('strong', { text: t('demoStrong') }), ` ${t('demoText')} `,
       el('button', { class: 'link', type: 'button', text: t('demoPaste'), onclick() {
@@ -274,7 +276,7 @@ function plansSection() {
 }
 
 /* Set-up help for each service: where to get the key (official pages only) and how it is pasted.
-   Keys go to the program on this computer and are saved next to it; the page never shows them again. */
+   Keys go to the program on this computer and are saved in its data folder; the page never shows them again. */
 const SETUP = {
   spotify: { site: 'https://developer.spotify.com/dashboard', steps: () => [t('setSp1'), t('setSp2'), t('setSp3')] },
   youtube: { site: 'https://console.cloud.google.com/', steps: () => [t('setYt1'), t('setYt2'), t('setYt3')] },
@@ -282,6 +284,7 @@ const SETUP = {
 };
 const redrawHome = () => document.getElementById('view').replaceChildren(home());
 const GUIDE = 'https://github.com/9w1voo/DoriePlay#connecting-the-services';
+const RELEASES = 'https://github.com/9w1voo/DoriePlay/releases/latest';
 
 function setupPanel(p) {
   const fields = p.name === 'soundcloud'
@@ -327,14 +330,56 @@ function connectionsSection() {
         text: p.key ? t('setChange') : t('setUp'),
         onclick() { S.setup = S.setup === p.name ? null : p.name; redrawHome(); } }),
       S.setup === p.name && setupPanel(p)))),
+    songbaseRow(),
     el('p', { class: 'hint', text: t('ytLeft', { left }) }));
+}
+
+function songbaseRow() {   // not in the demo (it never asks the base); an older server sends no songbase
+  const base = S.state.songbase;
+  if (S.state.demo || !base) return null;
+  const box = el('input', { type: 'checkbox', checked: base.on, disabled: base.locked, async onchange() {
+    try { S.state.songbase = (await api('settings', { songbase: box.checked })).songbase; }
+    catch (error) { box.checked = base.on; toast(error.message, true); }
+  } });
+  return el('div', { class: 'songbase' },
+    el('label', { class: 'songbase-switch' }, box, ' ', t('songbase')),
+    el('p', { class: 'hint', text: t('songbaseHint') }),
+    base.locked && el('p', { class: 'hint', text: t('songbaseLocked') }));
 }
 
 // --- Plan ------------------------------------------------------------------------------------------
 
+// The hosts platforms/signin.py accepts for a sign-in link; checked here again before anything is shown.
+const SIGNIN_HOSTS = ['accounts.spotify.com', 'accounts.google.com', 'secure.soundcloud.com'];
+function isSigninLink(url) {
+  try { const parsed = new URL(url); return parsed.protocol === 'https:' && SIGNIN_HOSTS.includes(parsed.hostname); }
+  catch { return false; }
+}
+// Shown while a service waits for the browser. The node is kept (S.signin) while the link stays the same.
+const signinShown = job => !!(job && job.signin && S.signin && S.signin.url === job.signin.url && S.signin.node.isConnected);
+
+function signinCard(signin) {
+  if (S.signin && S.signin.url === signin.url) return S.signin.node;
+  const field = el('input', { class: 'link-input signin-link', type: 'text', readonly: true, value: signin.url,
+    'aria-label': t('signinTitle', { service: signin.service }), onfocus: event => event.target.select() });
+  const copy = () => Promise.resolve().then(() => navigator.clipboard.writeText(signin.url))
+    .then(() => toast(t('signinCopied')), () => { field.focus(); field.select(); });
+  const node = el('div', { class: 'signin' },
+    el('h3', { text: t('signinTitle', { service: signin.service }) }),
+    el('a', { class: 'btn primary', href: signin.url, target: '_blank', rel: 'noopener noreferrer', text: t('signinOpen') }),
+    field,
+    el('button', { class: 'btn ghost', type: 'button', text: t('signinCopy'), onclick: copy }),
+    el('p', { class: 'hint', text: t('signinHint') }));
+  S.signin = { url: signin.url, node };
+  return node;
+}
+
 function jobCard(job) {
   const searching = job.kind === 'plan', checking = job.kind === 'check';
   const share = job.total ? Math.min(100, Math.round(100 * job.done / job.total)) : 0;
+  // After an error the sign-in server is closed and the link is dead: the error says what to do.
+  const signin = job.state === 'running' && job.signin && isSigninLink(job.signin.url) ? signinCard(job.signin) : null;
+  if (!signin) S.signin = null;
   if (job.state === 'error') {
     return el('div', { class: 'card job bad' },
       el('h2', { text: searching ? t('searchStopped') : checking ? t('checkStopped') : t('transferStopped') }),
@@ -343,6 +388,7 @@ function jobCard(job) {
   }
   return el('div', { class: 'card job' },
     el('h2', { text: searching ? t('searching') : checking ? t('checking') : t('adding') }),
+    signin,
     el('div', { class: 'bar', role: 'progressbar', 'aria-valuenow': share, 'aria-valuemin': 0, 'aria-valuemax': 100 },
       el('span', { style: `width:${job.total ? share : 4}%` })),
     el('p', { class: job.total ? 'job-count' : 'job-wait', text: job.total ? t('xOfY', job)
@@ -569,7 +615,8 @@ function poll() {
       const job = S.state.job;
       if (job && job.plan !== before && location.hash === '#/plan/' + before) location.hash = '#/plan/' + job.plan;
       if (location.hash.startsWith('#/plan/')) {
-        if (job && job.state !== 'running') await loadPlan(location.hash.slice(7)); else drawPlan();
+        // While the same sign-in link waits nothing else changes; a redraw would drop the field's focus.
+        if (job && job.state !== 'running') await loadPlan(location.hash.slice(7)); else if (!signinShown(job)) drawPlan();
       }
     } catch { /* the program was stopped; the next tick tries again */ }
     poll();
@@ -580,6 +627,7 @@ async function route() {
   clearTimeout(S.timer);
   try { S.state = await api('state'); }
   catch (error) { document.getElementById('view').replaceChildren(el('p', { class: 'hint', text: error.message })); return; }
+  document.getElementById('version').textContent = S.state.version || '';
   if (location.hash.startsWith('#/plan/')) {
     const name = location.hash.slice(7);
     if (!S.plan || S.plan.name !== name) { S.plan = null; S.filter = null; S.open.clear(); S.playing.clear(); }

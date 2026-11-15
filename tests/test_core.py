@@ -5,15 +5,20 @@ No network and no keys are needed.
 """
 import contextlib
 import io
+import json
+import os
+import subprocess
 import sys
 import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import dorieplay  # noqa: E402
+import paths  # noqa: E402
 import platforms  # noqa: E402
 from platforms import soundcloud, spotify, text, youtube  # noqa: E402
 
@@ -205,6 +210,60 @@ class PlanFile(Case):
         dorieplay.save(self.plan, {'name': 'n', 'source': 'u', 'from': 'spotify', 'to': 'youtube', 'tracks': [
             {'title': 'a', 'artists': ['b'], 'duration_ms': None, 'source_id': '1', 'approved': False}]})
         self.assertIn('nothing found', self.quiet(dorieplay.review_plan, self.args())[1])
+
+
+PROJECT = Path(__file__).resolve().parent.parent
+# Every data path, printed as its folder by a fresh Python that has DORIEPLAY_HOME set.
+DATA_PATHS = """
+import json, dorieplay, server
+from platforms import soundcloud, spotify, youtube
+files = [spotify.CLIENT_FILE, spotify.TOKEN_FILE, youtube.CLIENT_FILE, youtube.TOKEN_FILE,
+         soundcloud.CLIENT_FILE, soundcloud.TOKEN_FILE, dorieplay.CACHE, server.PLANS, dorieplay.SETTINGS]
+print(json.dumps({'data': [str(f.parent) for f in files],
+                  'web': str(server.WEB)}))
+"""
+
+
+class DataFolder(unittest.TestCase):
+    def test_dorieplay_home_wins_then_the_frozen_app_folder_then_the_code_folder(self):
+        with mock.patch.dict(os.environ, {'DORIEPLAY_HOME': '~/x'}):
+            self.assertEqual(paths.data_folder(), Path('~/x').expanduser())
+        frozen = mock.patch.object(sys, 'frozen', True, create=True)
+        home = mock.patch.object(Path, 'home', lambda: Path('/h'))
+        with mock.patch.dict(os.environ, {'DORIEPLAY_HOME': ''}), frozen, home:
+            with mock.patch.object(sys, 'platform', 'darwin'):
+                self.assertEqual(paths.data_folder(), Path('/h/Library/Application Support/Dorie Play'))
+            with mock.patch.object(sys, 'platform', 'linux'):
+                self.assertEqual(paths.data_folder(), Path('/h/.local/share/Dorie Play'))
+            with mock.patch.object(sys, 'platform', 'win32'), \
+                    mock.patch.dict(os.environ, {'APPDATA': 'C:/Users/i/AppData/Roaming'}):
+                self.assertEqual(paths.data_folder(), Path('C:/Users/i/AppData/Roaming') / 'Dorie Play')
+        with mock.patch.dict(os.environ, {'DORIEPLAY_HOME': ''}):
+            self.assertEqual(paths.data_folder(), Path(paths.__file__).resolve().parent)
+
+    def test_every_data_file_follows_dorieplay_home(self):
+        with tempfile.TemporaryDirectory() as home:
+            done = subprocess.run([sys.executable, '-c', DATA_PATHS], cwd=PROJECT, timeout=60, capture_output=True,
+                                  text=True, env={**os.environ, 'DORIEPLAY_HOME': home, 'DORIEPLAY_SONGBASE': ''})
+            self.assertEqual(done.returncode, 0, done.stderr)
+            found = json.loads(done.stdout)
+            self.assertEqual(found['data'], [home] * len(found['data']))
+            self.assertEqual(len(found['data']), 9)
+            self.assertEqual(found['web'], str(PROJECT / 'web'))
+
+    def test_ensure_makes_a_private_folder_and_leaves_an_existing_one_alone(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch) / 'a' / 'Dorie Play'
+            self.assertEqual(paths.ensure(folder), folder)
+            self.assertTrue(folder.is_dir())
+            if os.name != 'nt':   # Windows has no such modes
+                self.assertEqual(folder.stat().st_mode & 0o777, 0o700)
+            existing = Path(scratch) / 'code'
+            existing.mkdir()
+            existing.chmod(0o755)
+            paths.ensure(existing)
+            if os.name != 'nt':
+                self.assertEqual(existing.stat().st_mode & 0o777, 0o755)
 
 
 if __name__ == '__main__':

@@ -11,6 +11,7 @@ import threading
 import types
 import unittest
 import urllib.request
+import warnings
 from pathlib import Path
 from unittest import mock
 
@@ -76,7 +77,9 @@ class Build(Base):
 class Server(Base):
     def test_answers_ranked_candidates_and_logs_nothing(self):
         url = self.start_server()
-        with contextlib.redirect_stderr(io.StringIO()) as log:
+        # Python's "unclosed database" warning (a request thread's connection collected) is not a log line.
+        with contextlib.redirect_stderr(io.StringIO()) as log, warnings.catch_warnings():
+            warnings.simplefilter('ignore', ResourceWarning)
             status, answer = self.post(url + '/v1/match', MACHO)
             self.assertEqual(status, 200)
             self.assertEqual([(c['id'], c['source']) for c in answer['candidates']],
@@ -126,6 +129,22 @@ class Client(Base):
             self.assertEqual([(c['id'], len(c['title']), c['url']) for c in songbase.lookup(MACHO, url)],
                              [('eeeeeeeeeee', 300, 'https://www.youtube.com/watch?v=eeeeeeeeeee')])
 
+    def test_the_live_base_is_on_unless_switched_off(self):
+        settings = self.folder / 'settings.json'
+        with mock.patch.object(dorieplay, 'SETTINGS', settings):
+            with mock.patch.dict(os.environ):
+                os.environ.pop('DORIEPLAY_SONGBASE', None)
+                self.assertEqual(dorieplay.songbase_url(), 'https://base.dorieplay.com')
+                settings.write_text(json.dumps({'songbase': False}), encoding='utf-8')
+                self.assertEqual(dorieplay.songbase_url(), '')
+                for broken in ('not json', '[false]'):
+                    settings.write_text(broken, encoding='utf-8')
+                    self.assertEqual(dorieplay.songbase_url(), dorieplay.SONGBASE)
+            settings.write_text(json.dumps({'songbase': True}), encoding='utf-8')
+            for value in ('', 'http://127.0.0.1:9'):   # the variable wins over the file
+                with mock.patch.dict(os.environ, {'DORIEPLAY_SONGBASE': value}):
+                    self.assertEqual(dorieplay.songbase_url(), value)
+
     def test_off_by_default_and_a_dead_base_is_asked_once(self):
         with mock.patch.object(songbase.urllib.request, 'urlopen') as call:
             self.assertEqual(songbase.lookup(MACHO), [])
@@ -162,6 +181,25 @@ class Plan(Base):
         self.assertEqual((tracks[0]['approved'], tracks[0]['match_id'], tracks[0]['candidates'][0]['source']),
                          (True, 'aaaaaaaaaaa', 'discogs'))
         self.assertFalse(tracks[1]['approved'])
+
+    def test_switching_the_base_off_stops_it_for_the_rest_of_the_search(self):
+        asked = []
+
+        def lookup(track, url=None):   # the person unticks the switch while the first song is looked up
+            asked.append(url)
+            dorieplay.save_settings({'songbase': False})
+            return []
+
+        fake = types.SimpleNamespace(NAME='youtube', LABEL='YouTube', search=lambda t: [], unavailable=lambda ids: set())
+        args = types.SimpleNamespace(playlist='Zemfira - Мачо 4:05\nNobody - Unknown song 3:00', to='youtube',
+                                     plan=str(self.folder / 'plan.json'), force=False, no_cache=False)
+        with mock.patch.dict(platforms.PLATFORMS, {'youtube': fake}), mock.patch.dict(os.environ), \
+                mock.patch.object(dorieplay, 'CACHE', self.folder / 'cache.json'), \
+                mock.patch.object(dorieplay, 'SETTINGS', self.folder / 'settings.json'), \
+                mock.patch.object(songbase, 'lookup', lookup), contextlib.redirect_stdout(io.StringIO()):
+            os.environ.pop('DORIEPLAY_SONGBASE', None)
+            dorieplay.make_plan(args)
+        self.assertEqual(asked, [dorieplay.SONGBASE, ''])
 
     def test_a_dead_base_video_falls_back_to_a_youtube_search(self):
         tracks, searched, _ = self.plan(dead={'aaaaaaaaaaa'})
