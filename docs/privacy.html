@@ -15,21 +15,20 @@
     </header>
 
     <h1>Privacy policy</h1>
-    <p>Last updated: 15 November 2026.</p>
+    <p>Last updated: 16 November 2026.</p>
 
     <h2>In short</h2>
-    <p>Dorie Play is a program that runs on your own computer. It has no server of its own: the developer receives
-      no data about you, your playlists or how you use the program. There are no accounts, no analytics and no ads.</p>
+    <p>Dorie Play is a program that runs on your own computer. It talks to the services you choose directly from your computer. Two small Dorie Play servers help: the song base and the SoundCloud sign-in server. Neither keeps logs or stores anything about you, and the developer keeps no data about you, your playlists or how you use the program. There are no accounts, no analytics and no ads.</p>
 
     <h2>What the program keeps on your computer</h2>
     <p>Everything below is stored in the program folder on your computer and nowhere else:</p>
     <ul>
-      <li><b>Your API keys</b> for the services you connect: <code>spotify-client.json</code>, <code>google-client.json</code>,
-        <code>soundcloud-client.json</code>. Keys saved through the program's set-up page are readable only by
+      <li><b>Your API keys</b> for the services you connect: <code>spotify-client.json</code>, <code>google-client.json</code>. Keys saved through the program's set-up page are readable only by
         your user account; a key file you put there yourself keeps the permissions you gave it.</li>
       <li><b>Sign-ins</b> (access tokens) given by the services after you sign in: <code>.spotify-token</code>,
         <code>.youtube-token.json</code>, <code>.soundcloud-token.json</code>. When you save a new key for a
         service, its old sign-in is deleted.</li>
+      <li><b>Plans</b> that involve SoundCloud lose the SoundCloud song details (titles, artists, uploader names and links) once the transfer has finished without skipped songs, or, for the plans on the start page, when you sign out of SoundCloud in the program.</li>
       <li><b>Plans</b> in the <code>plans</code> folder: the name of a playlist, its songs (title, artists, length,
         service ids), the candidates found for each song (title, artist or channel, length, link) and your decisions.
         They stay until you delete them.</li>
@@ -39,18 +38,17 @@
     </ul>
 
     <h2>What is sent, and to whom</h2>
-    <p>Dorie Play connects directly from your computer to the services you choose — Spotify, YouTube (Google) and
-      SoundCloud — with your own keys and your own sign-in, and only when you start an action. A public Deezer
-      playlist you paste is read from Deezer without a key or sign-in:</p>
+    <p>Dorie Play connects directly from your computer to the services you choose — Spotify, YouTube (Google) and SoundCloud — and only when you start an action. Spotify and YouTube use your own keys. SoundCloud uses Dorie Play’s own SoundCloud app, so you only sign in. A public Deezer playlist you paste is read from Deezer without a key or sign-in:</p>
     <ul>
       <li>reading the playlist you paste;</li>
       <li>searching for each song on the service you transfer to;</li>
       <li>checking whether the chosen YouTube videos still exist, when you press “Check the videos”;</li>
-      <li>only if the song base is turned on (it is off unless you set it up): the title, artists and length
+      <li>unless you turn the song base off under Services on the start page: the title, artists and length
         of each song, sent to the song base server to find a YouTube video without a YouTube search. It keeps
         no logs and stores nothing about you; to limit how often one internet address may ask, it counts
         requests per address in memory only, and forgets the counts every hour. The videos it suggests are then checked with YouTube to see
         that they still play;</li>
+      <li>to the Dorie Play sign-in server for SoundCloud (base.dorieplay.com), when you sign in to SoundCloud and about once an hour while you use it: the one-time sign-in code, or the token that renews your sign-in. The server adds Dorie Play’s SoundCloud app key, passes the request to SoundCloud and returns SoundCloud’s answer to your computer. These tokens give access to your SoundCloud account and may contain account details. The server keeps no logs and stores nothing; to limit how often one internet address may ask, it counts requests per address in memory only, and forgets the counts every hour. Everything else goes from your computer to SoundCloud directly;</li>
       <li>creating a playlist and adding the songs you approved, when you confirm the transfer. On YouTube and
         SoundCloud the playlist is private. Spotify makes playlists created by apps public: anyone with the link
         can open it, and it shows your Spotify profile name. You can make it private in the Spotify app.</li>
@@ -75,6 +73,7 @@
 
     <h2>Removing your data</h2>
     <ul>
+      <li>SoundCloud: press Sign out next to SoundCloud on the start page. It removes Dorie Play’s access to your SoundCloud account, deletes the sign-in on this computer and removes SoundCloud song details from the plans on the start page. If SoundCloud cannot be reached, the program says so; then remove Dorie Play under Connected apps in your SoundCloud settings. Plan files you saved elsewhere with the command line keep their details until you delete them.</li>
       <li>Delete the files and the <code>plans</code> folder listed above from the program folder, or delete the whole folder.</li>
       <li>Remove the program's access to your accounts: for Google on the page linked above, for Spotify and
         SoundCloud in the connected or authorised apps section of your account settings there.</li>
