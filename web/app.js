@@ -63,7 +63,8 @@ function toast(text, bad) {
 }
 
 const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
-const label = name => name === 'text' ? t('songList') : (S.state.platforms.find(p => p.name === name) || { label: name }).label;
+const label = name => name === 'text' ? t('songList') : name === 'deezer' ? 'Deezer'   // source only, not in platforms
+  : (S.state.platforms.find(p => p.name === name) || { label: name }).label;
 function songs(count) {   // "1 song", "3 пісні", "5 песен": each language has its own plural rules
   const forms = window.I18N[lang].songs;
   return `${count} ${forms[new Intl.PluralRules(lang).select(count)] || forms.other}`;
@@ -74,6 +75,7 @@ function sourceOf(url) {
   if (/(^|\/\/|\.)spotify\.com\/|^spotify:/i.test(url)) return 'spotify';
   if (/(^|\/\/|\.)(youtube\.com|youtu\.be)\//i.test(url)) return 'youtube';
   if (/(^|\/\/|\.)soundcloud\.com\/|^soundcloud:/i.test(url)) return 'soundcloud';
+  if (/(^|\/\/|\.)deezer\.com\//i.test(url)) return 'deezer';
   return url && !url.includes('/') ? 'text' : null;
 }
 const listLines = text => text.split('\n').filter(line => line.trim() && !line.trim().startsWith('#')).length;

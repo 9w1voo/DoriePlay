@@ -3,7 +3,7 @@
 # Dorie Play
 
 Move your playlists between **Spotify**, **YouTube** and **SoundCloud** — in any direction — and
-check every song before anything is transferred.
+check every song before anything is transferred. Public **Deezer** playlists can be moved out too.
 
 [Українською](README.uk.md)
 
@@ -16,7 +16,7 @@ and nothing is sent to anyone except the music services themselves.
 
 ![Start screen: paste a playlist link and choose where to transfer it](docs/start.png)
 
-> Not affiliated with Spotify, YouTube, Google or SoundCloud. The screenshots show the built-in demo with an invented playlist.
+> Not affiliated with Spotify, YouTube, Google, SoundCloud or Deezer. The screenshots show the built-in demo with an invented playlist.
 
 ## What you need (read this first)
 
@@ -27,6 +27,7 @@ There is no shared server and no shared keys: you connect the services with **yo
 | Spotify | A free developer app (Client ID). The app owner needs Spotify Premium. Only playlists you own or collaborate on can be read. |
 | YouTube | A Google Cloud project with YouTube Data API v3. About **100 searches a day**, so a long playlist going *to* YouTube takes several days (the program continues where it stopped). |
 | SoundCloud | API keys, which SoundCloud gives only to Artist Pro subscribers. |
+| Deezer | Nothing: public playlists are read without a key. Deezer is a source only, since it no longer gives out the keys needed to create playlists. |
 
 You only need keys for the two services you transfer between. Python 3.10 or newer.
 

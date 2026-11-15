@@ -8,9 +8,10 @@
   playlist_key(url) -> stable id of a playlist link (resume works when the link is copied again)
   item_id(text)     optional: id from an item link pasted into "match_id"
   MAX_PLAYLIST_TRACKS  optional: playlist size limit, checked before a playlist is created
-Adding a platform = adding a module here and to PLATFORMS.
+Adding a platform = adding a module here and to PLATFORMS. Source-only modules (text, deezer) are not in
+PLATFORMS: they only need NAME, LABEL, owns, read_playlist and playlist_key, and detect() knows them.
 """
-from . import soundcloud, spotify, text, youtube
+from . import deezer, soundcloud, spotify, text, youtube
 
 PLATFORMS = {module.NAME: module for module in (spotify, youtube, soundcloud)}
 
@@ -24,10 +25,8 @@ def get(name):
 def detect(url):
     if '\n' in url.strip():   # several lines: a pasted list of songs (platforms/text.py), whatever line 1 is
         return text
-    for module in PLATFORMS.values():
+    for module in (*PLATFORMS.values(), deezer, text):
         if module.owns(url):
             return module
-    if text.owns(url):
-        return text
-    raise ValueError('Cannot tell the platform from this link. Use a Spotify, YouTube or SoundCloud playlist URL '
-                     'or a list of songs.')
+    raise ValueError('Cannot tell the platform from this link. Use a Spotify, YouTube, SoundCloud or Deezer '
+                     'playlist URL or a list of songs.')

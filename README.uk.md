@@ -4,7 +4,8 @@
 
 ![Екран перевірки: кожна пісня поруч зі знайденим збігом](docs/review.png)
 
-Платформи: **Spotify**, **YouTube**, **SoundCloud**, у будь-якому напрямку.
+Платформи: **Spotify**, **YouTube**, **SoundCloud**, у будь-якому напрямку. Звідки ще можна: публічні
+плейлисти **Deezer** (ключ не потрібен; переносити в Deezer не можна — нових ключів Deezer не видає).
 Звідки — визначається за посиланням. Куди — параметр `--to spotify|youtube|soundcloud`;
 без нього Spotify → YouTube, YouTube → Spotify, SoundCloud → Spotify.
 
@@ -23,6 +24,7 @@ matching.py            оцінка збігів, розбір назв віде
 platforms/spotify.py   Spotify: читання, пошук, створення плейлиста
 platforms/youtube.py   YouTube: те саме
 platforms/soundcloud.py SoundCloud: те саме
+platforms/deezer.py    Deezer: лише читання публічних плейлистів
 ```
 
 Тести (без мережі й ключів): `python -m unittest discover tests`.

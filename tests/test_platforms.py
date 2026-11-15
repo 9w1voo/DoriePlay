@@ -14,7 +14,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from platforms import soundcloud, spotify, youtube  # noqa: E402
+import platforms  # noqa: E402
+from platforms import deezer, soundcloud, spotify, youtube  # noqa: E402
 
 
 class SpotifyException(Exception):
@@ -275,6 +276,59 @@ class SoundCloud(PlatformCase):
         for url in ('https://evil.example/x', 'http://api.soundcloud.com/x', 'https://soundcloud.com.evil.example/'):
             with self.assertRaisesRegex(RuntimeError, 'unexpected address'):
                 soundcloud._request('GET', url)
+
+
+# --- Deezer (source only, open API) ----------------------------------------------------------------
+
+class Deezer(unittest.TestCase):
+    def answers(self, pages):
+        """urlopen stand-in: each URL gets its list of JSON answers in turn; asked URLs are recorded."""
+        self.asked = []
+
+        def get(url, allow_redirects, timeout):
+            self.asked.append(url)
+            data = pages[url].pop(0)
+            return types.SimpleNamespace(status_code=200, headers={}, json=lambda: data)
+        for patch in (mock.patch.dict(sys.modules, {'requests': types.SimpleNamespace(get=get)}),
+                      mock.patch.object(deezer.time, 'sleep', lambda seconds: None)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_reads_every_page_with_isrc_and_follows_only_deezer_api_links(self):
+        api = 'https://api.deezer.com/playlist/123'
+        self.answers({
+            api: [{'title': 'Road trip'}],
+            api + '/tracks?limit=100': [{'error': {'code': 4, 'message': 'Quota limit exceeded'}},   # waits, asks again
+                                        {'data': [{'id': 1, 'type': 'track', 'title': 'Hey Jude (Remastered 2015)',
+                                                   'duration': 429, 'isrc': 'GBUM71505902', 'artist': {'name': 'The Beatles'}}],
+                                         'next': api + '/tracks?limit=100&index=100'}],
+            api + '/tracks?limit=100&index=100': [{'data': [
+                {'id': 2, 'title': 'мачо', 'duration': 260, 'artist': {'name': 'Земфира'}},
+                {'id': 3, 'type': 'episode', 'title': 'A podcast'}], 'next': 'https://evil.example/next'}]})
+        name, tracks = deezer.read_playlist('https://www.deezer.com/en/playlist/123?utm_source=x')
+        self.assertEqual(name, 'Road trip')
+        self.assertEqual(tracks, [
+            {'title': 'Hey Jude (Remastered 2015)', 'artists': ['The Beatles'], 'duration_ms': 429000,
+             'source_id': '1', 'isrc': 'GBUM71505902'},
+            {'title': 'мачо', 'artists': ['Земфира'], 'duration_ms': 260000, 'source_id': '2'}])
+        self.assertNotIn('https://evil.example/next', self.asked)
+
+    def test_private_or_missing_playlist_gets_a_clear_error(self):
+        self.answers({'https://api.deezer.com/playlist/9': [{'error': {'type': 'DataException', 'code': 800}}]})
+        with self.assertRaisesRegex(ValueError, 'private'):
+            deezer.read_playlist('deezer.com/playlist/9')
+
+    def test_links(self):
+        self.assertEqual(deezer.playlist_key('https://www.deezer.com/nl/playlist/908622995?utm_campaign=x'), '908622995')
+        self.assertIs(platforms.detect('https://www.deezer.com/playlist/1'), deezer)
+        self.assertIs(platforms.detect('https://soundcloud.com/x/sets/deezer-hits'), soundcloud)   # by host
+        with mock.patch.object(deezer, '_redirect', lambda url: 'https://www.deezer.com/en/playlist/42?host=1'):
+            self.assertEqual(deezer.playlist_id('https://link.deezer.com/s/30abc'), '42')
+        with mock.patch.object(deezer, '_redirect', lambda url: 'https://evil.example/playlist/42'):
+            with self.assertRaisesRegex(ValueError, 'not a playlist'):
+                deezer.playlist_id('https://link.deezer.com/s/30abc')
+        with self.assertRaisesRegex(ValueError, 'not a playlist'):
+            deezer.playlist_id('https://www.deezer.com/en/album/302127')
 
 
 if __name__ == '__main__':
