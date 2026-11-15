@@ -240,6 +240,33 @@ class Flow(ServerCase):
         self.assertEqual(status, 400)
         self.assertIn('too long', answer['error'])
 
+    def test_sign_out_goes_through_the_api(self):
+        status, answer = self.call('/api/signout/soundcloud', {})
+        self.assertEqual((status, answer['error']), (400, 'The demo has nothing to sign out of.'))
+        self.assertEqual(self.call('/api/signout/soundcloud', {}, token=False)[0], 403)
+
+    def test_a_cleared_plan_is_not_reused(self):
+        status, job = self.call('/api/plans', {'url': LINK, 'to': 'soundcloud'})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.wait()['state'], 'done')
+        first = job['plan']
+        saved = dorieplay.load(self.app.path(first))
+        saved['soundcloud_cleared'] = True
+        dorieplay.save(self.app.path(first), saved)
+        shown = self.call('/api/state')[1]['plans'][0]
+        self.assertEqual((shown['cleared'], shown['applied']), (True, False))
+        time.sleep(1.05)   # plan names carry the second they were made in
+        job = self.call('/api/plans', {'url': LINK, 'to': 'soundcloud'})[1]
+        self.assertNotEqual(job['plan'], first)
+        self.assertEqual(self.wait()['state'], 'done')
+
+    def test_a_transfer_to_soundcloud_marks_the_plan_cleared(self):
+        name = self.call('/api/plans', {'url': LINK, 'to': 'soundcloud'})[1]['plan']
+        self.assertEqual(self.wait()['state'], 'done')
+        self.assertEqual(self.call(f'/api/plans/{name}/apply', {})[0], 200)
+        self.assertEqual(self.wait()['state'], 'done')
+        self.assertIs(self.call('/api/state')[1]['plans'][0]['cleared'], True)
+
     def test_bad_requests_get_a_plain_answer(self):
         self.assertEqual(self.call('/api/plans', {'url': 'https://example.com/x'})[0], 400)
         self.assertEqual(self.call('/api/plans', {'url': LINK, 'to': 'spotify'})[0], 400)
@@ -327,6 +354,7 @@ class Keys(unittest.TestCase):
             patches.append(mock.patch.object(module, 'CLIENT_FILE', self.dir / key))
             patches.append(mock.patch.object(module, 'TOKEN_FILE', self.dir / token))
         patches.append(mock.patch.object(soundcloud, 'TOKEN_FILE', self.dir / '.soundcloud-token.json'))
+        patches.append(mock.patch.object(dorieplay, 'CACHE', self.dir / 'cache.json'))
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
@@ -388,6 +416,43 @@ class Keys(unittest.TestCase):
         self.assertEqual(json.loads(youtube.CLIENT_FILE.read_text()), {'installed': installed})
         self.assertIn('SoundCloud needs no key.', self.refused(404, 'soundcloud', '{}'))
         self.assertTrue(self.app.connection(youtube)['key'])
+
+    def test_sign_out_revokes_forgets_and_clears_saved_plans(self):
+        dorieplay.CACHE.write_text(json.dumps({'soundcloud|x|1|': {'at': time.time(), 'candidates': []}}))
+        track = {'title': 'T', 'artists': ['A'], 'duration_ms': 1000, 'source_id': 's1', 'approved': True,
+                 'match_id': 'm1', 'candidates': [{'id': 'm1', 'title': 'T', 'artist': 'A', 'url': 'u'}]}
+        plan = {'name': 'N', 'source': LINK, 'from': 'spotify', 'to': 'soundcloud', 'tracks': [dict(track)]}
+        other = {'name': 'O', 'source': LINK, 'from': 'spotify', 'to': 'youtube', 'tracks': [dict(track)]}
+        self.app.plans.mkdir(parents=True, exist_ok=True)
+        dorieplay.save(self.app.path('sc'), plan)
+        dorieplay.save(self.app.path('yt'), other)
+        (self.app.plans / 'broken.json').write_text('{not json')
+        untouched = self.app.path('yt').read_bytes()
+        calls = []
+        for answer in (True, False):
+            with mock.patch.object(soundcloud, 'disconnect', lambda: calls.append(1) or answer):
+                state = self.app.sign_out('soundcloud')
+            self.assertEqual((state['signed_out'], state['revoked'], state['signed_in']), (True, answer, False))
+        self.assertEqual(len(calls), 2)
+        cleared = dorieplay.load(self.app.path('sc'))
+        self.assertIs(cleared['soundcloud_cleared'], True)
+        self.assertEqual(cleared['tracks'][0]['candidates'], [{'id': 'm1'}])
+        self.assertEqual(self.app.path('yt').read_bytes(), untouched)
+        self.assertNotIn('soundcloud|', dorieplay.CACHE.read_text())
+        calls.clear()
+        self.app.job = {'state': 'running', 'plan': 'x'}
+        with mock.patch.object(soundcloud, 'disconnect', lambda: calls.append(1) or True):
+            with self.assertRaises(server.ApiError) as caught:
+                self.app.sign_out('soundcloud')
+            self.assertEqual(caught.exception.status, 409)
+            self.app.job = None
+            with self.assertRaises(server.ApiError) as caught:
+                self.app.sign_out('spotify')
+            self.assertEqual(caught.exception.status, 404)
+            with self.assertRaises(server.ApiError) as caught:
+                server.App(self.dir / 'demo-plans', demo=True).sign_out('soundcloud')
+            self.assertEqual(caught.exception.status, 400)
+        self.assertEqual(calls, [])
 
 
 if __name__ == '__main__':

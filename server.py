@@ -126,6 +126,7 @@ class App:
                 'total': len(tracks),
                 'approved': sum(1 for t in tracks if t.get('approved') and t.get('match_id')),
                 'applied': bool(plan.get('target_playlist_id')), 'target_url': plan.get('target_url') or '',
+                'cleared': bool(plan.get('soundcloud_cleared')),
                 'updated': self.path(name).stat().st_mtime}
 
     def summaries(self):
@@ -203,6 +204,26 @@ class App:
             module._client = None
             return {'saved': True, **self.connection(module)}
 
+    def sign_out(self, name):
+        """Sign out of SoundCloud: revoke the sign-in, forget it here, and strip SoundCloud data from the
+        saved plans and the search cache, so that Dorie Play keeps none of it."""
+        if name != 'soundcloud':
+            raise ApiError(404, 'There is no such service.')
+        if self.demo:
+            raise ApiError(400, 'The demo has nothing to sign out of.')
+        module = platforms.get('soundcloud')
+        with self.lock:
+            if self.busy():
+                raise ApiError(409, 'Wait until the running task is finished.')
+            revoked = module.disconnect()
+            for path in self.plans.glob('*.json'):
+                with contextlib.suppress(Exception):   # a broken file must not stop the sign-out
+                    plan = dorieplay.load(path)
+                    if isinstance(plan, dict) and 'soundcloud' in (plan.get('from'), plan.get('to')):
+                        dorieplay.save(path, dorieplay.clear_soundcloud(plan))
+            dorieplay.read_cache()   # drops the SoundCloud answers and writes the file back
+            return {'signed_out': True, 'revoked': revoked, **self.connection(module)}
+
     def youtube_searches_left(self):
         """An estimate from the search cache: searches made since midnight Pacific time, when YouTube
         resets its limit. Searches made by other programs with the same key are not seen."""
@@ -246,6 +267,7 @@ class App:
             for summary in self.summaries():
                 plan = self.load(summary['name'])
                 if (plan.get('from') == source.NAME and plan.get('to') == target.NAME and not summary['applied']
+                        and not plan.get('soundcloud_cleared')
                         and dorieplay.same_playlist(source, plan.get('source'), url)):
                     name = summary['name']
                     break
@@ -406,6 +428,8 @@ def make_handler(app, port):
                     return self.reply(200, app.save_settings(body))
                 if method == 'POST' and len(parts) == 2 and parts[0] == 'keys':
                     return self.reply(200, app.save_key(parts[1], body.get('value'), body.get('replace') is True))
+                if method == 'POST' and len(parts) == 2 and parts[0] == 'signout':
+                    return self.reply(200, app.sign_out(parts[1]))
                 raise ApiError(404, 'Not found.')
             except ApiError as error:
                 self.reply(error.status, {'error': str(error)})
