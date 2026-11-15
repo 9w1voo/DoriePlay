@@ -67,6 +67,7 @@ class PlatformCase(unittest.TestCase):
                    mock.patch.dict(os.environ, {'DORIEPLAY_SC_RELAY': 'http://127.0.0.1:9'}),
                    mock.patch.object(soundcloud, 'TOKEN_FILE', here / '.soundcloud-token.json'),
                    mock.patch.object(soundcloud, '_token', None),
+                   mock.patch.object(soundcloud, '_me_urn', None, create=True),
                    mock.patch.object(youtube.time, 'sleep', lambda seconds: self.slept.append(seconds)),
                    mock.patch('sys.stdout', new_callable=io.StringIO)]   # the "Added: ..." lines
         self.slept = []
@@ -531,7 +532,8 @@ class SoundCloud(PlatformCase):
         requests.RequestException = type('RequestException', (Exception,), {})
 
         def post(url, json=None, timeout=None, allow_redirects=True, headers=None):
-            calls.append({'url': url, 'json': json, 'allow_redirects': allow_redirects, 'timeout': timeout})
+            calls.append({'url': url, 'json': json, 'allow_redirects': allow_redirects, 'timeout': timeout,
+                          'headers': headers})
             answer = queue.pop(0)
             if answer == 'down':
                 raise requests.RequestException('down')
@@ -642,6 +644,120 @@ class SoundCloud(PlatformCase):
 
 
 # --- Deezer (source only, open API) ----------------------------------------------------------------
+
+    def test_a_long_wait_stops_with_a_plain_message(self):
+        requests = sys.modules['requests']
+
+        class Busy:
+            status_code, ok, content, text = 429, False, b'', ''
+
+            def __init__(self, after):
+                self.headers = {'Retry-After': after}
+
+        for after, slept in (('120', []), ('5', [5, 5, 5])):
+            self.slept.clear()
+            requests.request = lambda *a, after=after, **k: Busy(after)
+            with mock.patch.object(soundcloud, '_access_token', lambda force_refresh=False: 't'):
+                with self.assertRaises(RuntimeError) as caught:
+                    soundcloud._request('GET', '/tracks')
+            self.assertEqual(str(caught.exception), soundcloud.API_BUSY_TEXT)
+            self.assertEqual(self.slept, slept)
+
+    def test_private_playlists_only_from_your_own_account(self):
+        asked = []
+        calls = {'me': 0}
+
+        def api(method, path, params=None, body=None, retry_auth=True):
+            if path == '/me':
+                calls['me'] += 1
+                return {'urn': 'soundcloud:users:1'}
+            if path == '/resolve':
+                return {'kind': 'playlist', 'urn': 'soundcloud:playlists:5', **asked[0]}
+            if path.endswith('/tracks'):
+                return {'collection': []}
+            return {'kind': 'playlist', 'urn': 'soundcloud:playlists:5', **asked[0]}
+
+        self.use(api)
+        others = {'sharing': 'private', 'user': {'urn': 'soundcloud:users:2'}}
+        asked.append(others)
+        for link in ('https://soundcloud.com/x/sets/y', 'soundcloud:playlists:5'):
+            with self.assertRaises(ValueError) as caught:
+                soundcloud.read_playlist(link)
+            self.assertEqual(str(caught.exception), soundcloud.PRIVATE_TEXT)
+        self.assertEqual(calls['me'], 1)
+        asked[0] = {'sharing': 'private', 'user': {'urn': 'soundcloud:users:1'}}
+        soundcloud.read_playlist('https://soundcloud.com/x/sets/y')
+        asked[0] = {'sharing': 'public', 'user': {'urn': 'soundcloud:users:2'}}
+        soundcloud.read_playlist('soundcloud:playlists:5')
+        self.assertEqual(calls['me'], 1)
+        self.relay_answers((200, {'access_token': 'a1', 'refresh_token': 'r1', 'expires_in': 3600}))
+        with mock.patch.object(signin, 'wait_for_code', lambda *a, **k: 'code1'):
+            soundcloud._login()
+        asked[0] = others
+        with self.assertRaises(ValueError):
+            soundcloud.read_playlist('soundcloud:playlists:5')
+        self.assertEqual(calls['me'], 2)
+
+    def test_uploader_and_page_link_are_kept_for_credit(self):
+        page = 'https://soundcloud.com/uploader1/song'
+        items = [{'urn': 'soundcloud:tracks:1', 'title': 'Song'},
+                 {'urn': 'soundcloud:tracks:2', 'title': 'Song', 'metadata_artist': 'Artist',
+                  'user': {'username': 'uploader1'}, 'permalink_url': page}]
+        self.use(lambda method, path, params=None, body=None, retry_auth=True:
+                 {'collection': items} if path.endswith('/tracks') else {'kind': 'playlist', 'urn': 'u'})
+        _, tracks = soundcloud.read_playlist('https://soundcloud.com/x/sets/y')
+        self.assertEqual((tracks[0]['uploader'], tracks[0]['source_url']), ('', ''))
+        self.assertEqual((tracks[1]['uploader'], tracks[1]['source_url']), ('uploader1', page))
+        bare = soundcloud._candidate(items[0])
+        self.assertEqual((bare['uploader'], bare['url']), ('', ''))
+        full = soundcloud._candidate(items[1])
+        self.assertEqual((full['uploader'], full['url'], full['artist']), ('uploader1', page, 'Artist'))
+
+    def test_sign_out_revokes_and_forgets_even_when_the_relay_is_down(self):
+        def boom(*args, **kwargs):
+            raise AssertionError('no sign-in during sign-out')
+
+        def write(**data):
+            soundcloud.TOKEN_FILE.write_text(json.dumps(data), encoding='utf-8')
+
+        good = {'access_token': 'a1', 'refresh_token': 'r1', 'expires_at': time.time() + 600,
+                'client_id': soundcloud.CLIENT_ID}
+        disconnect = 'https://api.soundcloud.com/disconnect'
+        with mock.patch.object(signin, 'wait_for_code', boom):
+            write(**good)
+            calls = self.relay_answers((204, {}))
+            soundcloud._token, soundcloud._me_urn = {'x': 1}, 'soundcloud:users:1'
+            self.assertIs(soundcloud.disconnect(), True)
+            [call] = calls
+            self.assertEqual((call['url'], call['headers']), (disconnect, {'Authorization': 'OAuth a1'}))
+            self.assertIs(call['allow_redirects'], False)
+            self.assertFalse(soundcloud.TOKEN_FILE.exists())
+            self.assertIsNone(soundcloud._token)
+            self.assertIsNone(soundcloud._me_urn)
+
+            write(**{**good, 'expires_at': 0})
+            calls = self.relay_answers((502, {'error': 'x'}))
+            self.assertIs(soundcloud.disconnect(), False)
+            self.assertEqual([c['url'] for c in calls], ['http://127.0.0.1:9/v1/soundcloud/token'])
+            self.assertFalse(soundcloud.TOKEN_FILE.exists())
+
+            for other in ({}, {'client_id': 'someone-else'}):
+                write(access_token='a1', refresh_token='r1', expires_at=0, **other)
+                calls = self.relay_answers()
+                self.assertIs(soundcloud.disconnect(), False)
+                self.assertEqual(calls, [])
+                self.assertFalse(soundcloud.TOKEN_FILE.exists())
+
+            write(**good)
+            calls = self.relay_answers('down')
+            self.assertIs(soundcloud.disconnect(), False)
+            self.assertEqual(len(calls), 1)
+            self.assertFalse(soundcloud.TOKEN_FILE.exists())
+
+            calls = self.relay_answers()
+            self.assertIs(soundcloud.disconnect(), False)
+            self.assertEqual(calls, [])
+
 
 class Deezer(unittest.TestCase):
     def answers(self, pages):

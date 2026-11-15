@@ -44,7 +44,11 @@ BUSY_TEXT = 'SoundCloud sign-in is busy for everyone right now. Try again in a f
 UNREACHABLE_TEXT = 'Dorie Play’s sign-in server could not reach SoundCloud. Try again later.'
 MAX_PLAYLIST_TRACKS = 500   # SoundCloud's limit per playlist
 ALL_ACCESS = 'playable,preview,blocked'
+API_BUSY_TEXT = ('SoundCloud is busy for everyone using Dorie Play right now. '
+                 'Try again in about an hour; the search continues where it stopped.')
+PRIVATE_TEXT = 'Dorie Play can read private SoundCloud playlists only from your own account.'
 _token = None
+_me_urn = None
 
 
 def owns(url):
@@ -142,12 +146,14 @@ def _login():
         'code_challenge': challenge, 'code_challenge_method': 'S256', 'state': state})
     code = signin.wait_for_code(LABEL, url, DEFAULT_REDIRECT, state, announce=False)
     token = _token_request({'grant_type': 'authorization_code', 'code': code, 'code_verifier': verifier})
+    global _me_urn
+    _me_urn = None   # maybe another account now
     print('Signed in to SoundCloud.')   # only after the exchange worked
     return token
 
 
 def _access_token(force_refresh=False):
-    global _token
+    global _token, _me_urn
     if _token is None and TOKEN_FILE.exists():
         try:
             _token = json.loads(TOKEN_FILE.read_text(encoding='utf-8'))
@@ -156,6 +162,7 @@ def _access_token(force_refresh=False):
     if not isinstance(_token, dict) or (_token and _token.get('client_id') != CLIENT_ID):
         # a token of another app (an older own key) is never sent to the relay
         _token = None
+        _me_urn = None
         TOKEN_FILE.unlink(missing_ok=True)
     elif _token and not force_refresh and time.time() < _token.get('expires_at', 0):
         return _token['access_token']
@@ -169,6 +176,40 @@ def _access_token(force_refresh=False):
     return _token['access_token']
 
 
+def disconnect():
+    """Sign out: ask SoundCloud to revoke the token, then forget it. True only when SoundCloud confirmed (204).
+    Never opens a browser, never raises; the token file is deleted in every case."""
+    global _token, _me_urn
+    revoked = False
+    try:
+        import requests
+        data = json.loads(TOKEN_FILE.read_text(encoding='utf-8')) if TOKEN_FILE.exists() else None
+        if isinstance(data, dict) and data.get('client_id') == CLIENT_ID and data.get('access_token'):
+            if time.time() >= data.get('expires_at', 0):   # expired: one refresh, no sign-in
+                data = _token_request({'grant_type': 'refresh_token', 'refresh_token': data['refresh_token']})
+            response = requests.post(API + '/disconnect', headers={'Authorization': f"OAuth {data['access_token']}"},
+                                     timeout=30, allow_redirects=False)
+            revoked = response.status_code == 204
+    except Exception:
+        revoked = False
+    finally:
+        try:
+            TOKEN_FILE.unlink(missing_ok=True)
+        except OSError:
+            pass
+        _token = None
+        _me_urn = None
+    return revoked
+
+
+def _me():
+    """The signed-in user's urn (asked once)."""
+    global _me_urn
+    if _me_urn is None:
+        _me_urn = _request('GET', '/me').get('urn') or ''
+    return _me_urn
+
+
 def _request(method, path, params=None, body=None, retry_auth=True):
     """API call with token refresh on 401 and back-off on 429."""
     import requests
@@ -178,6 +219,7 @@ def _request(method, path, params=None, body=None, retry_auth=True):
     if target.scheme != 'https' or not (host == 'soundcloud.com' or host.endswith('.soundcloud.com')):
         # Links from API answers (next page, redirect) are followed with the token: only to SoundCloud itself.
         raise RuntimeError(f'SoundCloud answered with a link to an unexpected address: {url[:100]}')
+    waits = 0
     for attempt in range(6):
         response = requests.request(method, url, params=params, json=body, allow_redirects=False, timeout=60,
                                     headers={'Authorization': f'OAuth {_access_token()}',
@@ -186,9 +228,13 @@ def _request(method, path, params=None, body=None, retry_auth=True):
             _access_token(force_refresh=True)
             retry_auth = False
             continue
-        if response.status_code == 429 and attempt < 5:
-            wait = response.headers.get('Retry-After') or ''   # seconds; may also be an HTTP date
-            time.sleep(min(int(wait), 300) if wait.isdigit() else 2 ** (attempt + 1))
+        if response.status_code == 429:
+            after = response.headers.get('Retry-After') or ''   # seconds; may also be an HTTP date
+            wait = int(after) if after.isdigit() else 2 ** (attempt + 1)
+            if wait > 60 or waits >= 3:   # the limit is shared by everyone: a long wait is not ours to make
+                raise RuntimeError(API_BUSY_TEXT)
+            waits += 1
+            time.sleep(wait)
             continue
         if response.status_code in (301, 302, 303, 307, 308):
             location = response.headers.get('Location')
@@ -201,7 +247,7 @@ def _request(method, path, params=None, body=None, retry_auth=True):
         if not response.ok:
             raise RuntimeError(f'SoundCloud {method} {path} failed: {response.status_code} {response.text[:200]}')
         return response.json() if response.content else {}
-    raise RuntimeError('SoundCloud keeps answering 429 (too many requests). Try again later.')
+    raise RuntimeError(API_BUSY_TEXT)
 
 
 def _pages(path, **params):
@@ -218,7 +264,7 @@ def _pages(path, **params):
 def _playlist(url):
     """Playlist object (without tracks) for a soundcloud.com / on.soundcloud.com link or a URN."""
     if url.startswith('soundcloud:'):
-        return _request('GET', f'/playlists/{url}', params={'show_tracks': 'false'})
+        return _own_or_shared(_request('GET', f'/playlists/{url}', params={'show_tracks': 'false'}))
     found = _request('GET', '/resolve', params={'url': url})
     if 'location' in found:
         if not found['location']:
@@ -227,7 +273,14 @@ def _playlist(url):
     if found.get('kind') not in ('playlist', 'system-playlist'):
         raise ValueError(f"This SoundCloud link is a {found.get('kind', 'unknown item')}, not a playlist. "
                          'Use a link to a playlist (soundcloud.com/<user>/sets/<name>).')
-    return found
+    return _own_or_shared(found)
+
+
+def _own_or_shared(playlist):
+    """Private playlists are read only from the user's own account."""
+    if playlist.get('sharing') == 'private' and (playlist.get('user') or {}).get('urn') != _me():
+        raise ValueError(PRIVATE_TEXT)
+    return playlist
 
 
 def read_playlist(url):
@@ -239,7 +292,9 @@ def read_playlist(url):
             continue
         uploader = item.get('metadata_artist') or (item.get('user') or {}).get('username') or ''
         artists, title = parse_video(item.get('title') or '', uploader)
-        tracks.append({'title': title, 'artists': artists, 'duration_ms': item.get('duration') or 0,
+        tracks.append({'uploader': (item.get('user') or {}).get('username') or '',
+                       'source_url': item.get('permalink_url') or '',
+                       'title': title, 'artists': artists, 'duration_ms': item.get('duration') or 0,
                        'source_id': item['urn'], 'source_title': item.get('title'), 'isrc': item.get('isrc')})
     return playlist.get('title') or 'SoundCloud playlist', tracks
 
@@ -250,7 +305,8 @@ def _candidate(item):
     return {'id': item['urn'], 'title': item.get('title') or '',
             'artist': item.get('metadata_artist') or (item.get('user') or {}).get('username') or '',
             'seconds': round((item.get('duration') or 0) / 1000), 'topic': False,
-            'url': item.get('permalink_url') or item_url(item['urn']), 'isrc': item.get('isrc')}
+            'uploader': (item.get('user') or {}).get('username') or '',
+            'url': item.get('permalink_url') or '', 'isrc': item.get('isrc')}
 
 
 def search(track):
