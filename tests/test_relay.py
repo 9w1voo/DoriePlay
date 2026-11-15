@@ -282,6 +282,17 @@ class TestRelay(Base):
                     time.sleep(0.3)
             self.assertLess(time.monotonic() - started, 3)
 
+            started = time.monotonic()   # headers that never end: one byte every 0.3 s
+            with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+                sock.sendall(b'POST /v1/soundcloud/token HTTP/1.1\r\nX-A: ')
+                for _ in range(15):
+                    try:
+                        sock.sendall(b'a')
+                    except OSError:
+                        break
+                    time.sleep(0.3)
+            self.assertLess(time.monotonic() - started, 3)
+
             self.assertEqual(self.call(port)[0], 200)
             with mock.patch.object(relay, '_forward', side_effect=RuntimeError('boom s1')):
                 self.assertEqual(self.json_call(port)[:2], (502, {'error': 'soundcloud_refused'}))

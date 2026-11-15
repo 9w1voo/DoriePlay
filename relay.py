@@ -7,6 +7,7 @@ address is then the last X-Forwarded-For entry, the one that proxy added.
     python relay.py [--port 8772] [--secret PATH]     PATH: JSON {"client_id": ..., "client_secret": ...}
 """
 import argparse
+import io
 import ipaddress
 import json
 import os
@@ -58,6 +59,24 @@ def address_key(address):
     if parsed.version == 6:
         return str(ipaddress.ip_network(f'{parsed}/64', strict=False))
     return str(parsed)
+
+
+class _Deadline(io.RawIOBase):
+    """Reads from a socket, but never past `deadline` (time.monotonic): the whole request, request line and
+    headers included, must arrive in time, not just every single read."""
+
+    def __init__(self, sock, deadline):
+        self.sock, self.deadline = sock, deadline
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError
+        self.sock.settimeout(remaining)
+        return self.sock.recv_into(buffer)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -140,6 +159,7 @@ def serve(client_id, client_secret, port=PORT, host='127.0.0.1', per_address=PER
         def setup(self):
             super().setup()
             self.deadline = time.monotonic() + read_timeout
+            self.rfile = io.BufferedReader(_Deadline(self.connection, self.deadline))
 
         def log_message(self, *args):   # privacy: nothing about requests is written anywhere
             pass
