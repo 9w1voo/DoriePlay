@@ -161,7 +161,10 @@ def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1', limit=LIMIT_PER_HOUR)
                 return
             if self.path != '/v1/match':
                 return self.answer(404, {'error': 'Not found.'})
-            length = int(self.headers.get('Content-Length') or 0)
+            try:
+                length = int(self.headers.get('Content-Length') or 0)
+            except ValueError:
+                return self.answer(400, {'error': 'Send {"title", "artists", "duration_ms"}.'})
             if not 0 < length <= 4096:
                 return self.answer(413, {'error': 'Request is too large.'})
             try:
@@ -171,7 +174,11 @@ def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1', limit=LIMIT_PER_HOUR)
                 return self.answer(400, {'error': 'Send {"title", "artists", "duration_ms"}.'})
             self.answer(200, {'candidates': match(database(), track)})
 
-    httpd = ThreadingHTTPServer((host, port), Handler)
+    class Server(ThreadingHTTPServer):
+        def handle_error(self, request, client_address):   # privacy: an error must not write the address or the request to the journal
+            pass
+
+    httpd = Server((host, port), Handler)
     return httpd
 
 

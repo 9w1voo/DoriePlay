@@ -91,6 +91,24 @@ class Server(Base):
                 self.assertEqual(json.loads(response.read())['videos'], 2)
         self.assertEqual(log.getvalue(), '')   # no addresses or song names written anywhere
 
+    def test_a_broken_request_writes_nothing(self):
+        url = self.start_server()
+        with contextlib.redirect_stderr(io.StringIO()) as log, warnings.catch_warnings():
+            warnings.simplefilter('ignore', ResourceWarning)
+            request = urllib.request.Request(url + '/v1/match', data=b'{}', method='POST')
+            request.add_header('Content-Length', 'abc')
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(request, timeout=5)
+            with caught.exception:
+                self.assertEqual(caught.exception.code, 400)
+            with mock.patch.object(songbase, 'match', side_effect=RuntimeError):
+                with self.assertRaises(OSError):
+                    urllib.request.urlopen(urllib.request.Request(
+                        url + '/v1/match', data=json.dumps(MACHO).encode(), method='POST'), timeout=5)
+            with urllib.request.urlopen(url + '/v1/health', timeout=5) as response:
+                self.assertEqual(response.status, 200)
+        self.assertEqual(log.getvalue(), '')   # not even a traceback with the client address
+
     def test_each_address_is_limited_and_the_proxy_address_counts(self):
         httpd = songbase.serve(self.db, port=0, limit=2)
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
