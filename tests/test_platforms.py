@@ -690,6 +690,11 @@ class SoundCloud(PlatformCase):
         asked[0] = {'sharing': 'public', 'user': {'urn': 'soundcloud:users:2'}}
         soundcloud.read_playlist('soundcloud:playlists:5')
         self.assertEqual(calls['me'], 1)
+        for unclear in ({}, {'sharing': None}, {'sharing': 'Private'}):
+            asked[0] = {**unclear, 'user': {'urn': 'soundcloud:users:2'}}   # not exactly 'public' = private
+            with self.assertRaises(ValueError) as caught:
+                soundcloud.read_playlist('soundcloud:playlists:5')
+            self.assertEqual(str(caught.exception), soundcloud.PRIVATE_TEXT)
         self.relay_answers((200, {'access_token': 'a1', 'refresh_token': 'r1', 'expires_in': 3600}))
         with mock.patch.object(signin, 'wait_for_code', lambda *a, **k: 'code1'):
             soundcloud._login()
@@ -704,7 +709,7 @@ class SoundCloud(PlatformCase):
                  {'urn': 'soundcloud:tracks:2', 'title': 'Song', 'metadata_artist': 'Artist',
                   'user': {'username': 'uploader1'}, 'permalink_url': page}]
         self.use(lambda method, path, params=None, body=None, retry_auth=True:
-                 {'collection': items} if path.endswith('/tracks') else {'kind': 'playlist', 'urn': 'u'})
+                 {'collection': items} if path.endswith('/tracks') else {'kind': 'playlist', 'urn': 'u', 'sharing': 'public'})
         _, tracks = soundcloud.read_playlist('https://soundcloud.com/x/sets/y')
         self.assertEqual((tracks[0]['uploader'], tracks[0]['source_url']), ('', ''))
         self.assertEqual((tracks[1]['uploader'], tracks[1]['source_url']), ('uploader1', page))
@@ -714,8 +719,11 @@ class SoundCloud(PlatformCase):
         self.assertEqual((full['uploader'], full['url'], full['artist']), ('uploader1', page, 'Artist'))
 
     def test_sign_out_revokes_and_forgets_even_when_the_relay_is_down(self):
+        signins = []
+
         def boom(*args, **kwargs):
-            raise AssertionError('no sign-in during sign-out')
+            signins.append(args)
+            raise RuntimeError('no sign-in during sign-out')
 
         def write(**data):
             soundcloud.TOKEN_FILE.write_text(json.dumps(data), encoding='utf-8')
@@ -757,6 +765,7 @@ class SoundCloud(PlatformCase):
             calls = self.relay_answers()
             self.assertIs(soundcloud.disconnect(), False)
             self.assertEqual(calls, [])
+            self.assertEqual(signins, [])
 
 
 class Deezer(unittest.TestCase):

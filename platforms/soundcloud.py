@@ -277,8 +277,8 @@ def _playlist(url):
 
 
 def _own_or_shared(playlist):
-    """Private playlists are read only from the user's own account."""
-    if playlist.get('sharing') == 'private' and (playlist.get('user') or {}).get('urn') != _me():
+    """Anything not exactly 'public' counts as private and is read only from the user's own account."""
+    if playlist.get('sharing') != 'public' and (playlist.get('user') or {}).get('urn') != _me():
         raise ValueError(PRIVATE_TEXT)
     return playlist
 
