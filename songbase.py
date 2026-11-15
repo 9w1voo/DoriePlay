@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sqlite3
+import ssl
 import sys
 import threading
 import time
@@ -98,11 +99,25 @@ def match(db, track):
     return [{k: c[k] for k in ('id', 'title', 'artist', 'seconds', 'topic', 'url', 'source')} for c in ranked[:KEEP]]
 
 
-def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1'):
+LIMIT_PER_HOUR = 1000   # per address: a 500-song plan asks once per song
+
+
+def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1', limit=LIMIT_PER_HOUR):
     """POST /v1/match {title, artists, duration_ms} -> {candidates}; GET /v1/health -> {videos, built_from}.
-    No request is logged (no IP addresses, no song names).
-    shortcut: no rate limit and plain HTTP; on a public server put it behind HTTPS with a limit per address."""
+    No request is logged (no IP addresses, no song names). To enforce `limit`, each address's request
+    count is kept in memory only, and all counts are dropped every hour. Plain HTTP on 127.0.0.1: on a
+    public server a proxy on the same machine (Caddy) adds HTTPS, and the address is then the last
+    X-Forwarded-For entry, the one that proxy added."""
     local = threading.local()
+    counts, window, lock = {}, [time.monotonic()], threading.Lock()
+
+    def allowed(address):
+        with lock:
+            if time.monotonic() - window[0] > 3600:   # shortcut: fixed window, a burst at its edge can reach 2x limit
+                counts.clear()
+                window[0] = time.monotonic()
+            counts[address] = counts.get(address, 0) + 1
+            return counts[address] <= limit
 
     def database():
         if not hasattr(local, 'db'):
@@ -123,7 +138,17 @@ def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1'):
             self.end_headers()
             self.wfile.write(data)
 
+        def refused(self):
+            peer = self.client_address[0]
+            forwarded = self.headers.get('X-Forwarded-For') if peer in ('127.0.0.1', '::1') else None
+            if allowed(forwarded.split(',')[-1].strip() if forwarded else peer):
+                return False
+            self.answer(429, {'error': 'Too many requests from this address. Try again within an hour.'})
+            return True
+
         def do_GET(self):
+            if self.refused():
+                return
             if self.path != '/v1/health':
                 return self.answer(404, {'error': 'Not found.'})
             db = database()
@@ -131,6 +156,8 @@ def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1'):
             self.answer(200, {'videos': db.execute('SELECT count(*) FROM video').fetchone()[0], **meta})
 
         def do_POST(self):
+            if self.refused():
+                return
             if self.path != '/v1/match':
                 return self.answer(404, {'error': 'Not found.'})
             length = int(self.headers.get('Content-Length') or 0)
@@ -149,6 +176,16 @@ def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1'):
 
 # --- Asking a base from Dorie Play -------------------------------------------------------------------
 
+def _tls():
+    """python.org Python on the Mac ships no CA certificates, so HTTPS to a base would always fail;
+    certifi comes with requests (requirements.txt). Without it, the system's certificates are used."""
+    try:
+        import certifi
+    except ImportError:
+        return None
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 _down = {}   # address -> when it last failed: not asked for 5 minutes, so a dead base costs one timeout, not one per song
 
 
@@ -163,7 +200,7 @@ def lookup(track, url=None):
     request = urllib.request.Request(url + '/v1/match', data=body, method='POST',
                                      headers={'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:
+        with urllib.request.urlopen(request, timeout=5, context=_tls()) as response:
             candidates = json.loads(response.read(1_000_000)).get('candidates')
     except (OSError, ValueError, AttributeError) as error:
         _down[url] = time.time()

@@ -48,7 +48,8 @@
       <li>checking whether the chosen YouTube videos still exist, when you press “Check the videos”;</li>
       <li>only if the song base is turned on (it is off unless you set it up): the title, artists and length
         of each song, sent to the song base server to find a YouTube video without a YouTube search. It keeps
-        no logs and stores nothing about you. The videos it suggests are then checked with YouTube to see
+        no logs and stores nothing about you; to limit how often one internet address may ask, it counts
+        requests per address in memory only, and forgets the counts every hour. The videos it suggests are then checked with YouTube to see
         that they still play;</li>
       <li>creating a playlist and adding the songs you approved, when you confirm the transfer. On YouTube and
         SoundCloud the playlist is private. Spotify makes playlists created by apps public: anyone with the link

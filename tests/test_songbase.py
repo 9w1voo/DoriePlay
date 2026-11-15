@@ -88,6 +88,30 @@ class Server(Base):
                 self.assertEqual(json.loads(response.read())['videos'], 2)
         self.assertEqual(log.getvalue(), '')   # no addresses or song names written anywhere
 
+    def test_each_address_is_limited_and_the_proxy_address_counts(self):
+        httpd = songbase.serve(self.db, port=0, limit=2)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(httpd.shutdown)
+        url = f'http://127.0.0.1:{httpd.server_address[1]}/v1/match'
+
+        def ask(forwarded=None):
+            request = urllib.request.Request(url, data=json.dumps(MACHO).encode(), method='POST')
+            if forwarded:
+                request.add_header('X-Forwarded-For', forwarded)
+            try:
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    return response.status
+            except urllib.error.HTTPError as error:
+                with error:
+                    return error.code
+
+        self.assertEqual([ask('1.1.1.1'), ask('1.1.1.1'), ask('1.1.1.1')], [200, 200, 429])
+        self.assertEqual(ask('6.6.6.6, 2.2.2.2'), 200)   # a client-made first entry does not dodge the limit
+        self.assertEqual(ask('1.1.1.1, 2.2.2.2'), 200)
+        self.assertEqual(ask('9.9.9.9, 2.2.2.2'), 429)
+        self.assertEqual([ask(), ask(), ask()], [200, 200, 429])   # direct, on this machine
+
 
 class Client(Base):
     def test_a_confident_answer_skips_the_search_and_the_reply_is_checked(self):
