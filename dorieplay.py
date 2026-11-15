@@ -5,8 +5,10 @@
   apply   create a playlist from the approved matches (private on YouTube and SoundCloud; Spotify makes it public)
 """
 import argparse
+import hashlib
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -101,21 +103,54 @@ def chosen_id(track, target):
     return value
 
 
-def cached_search(target, track, use_cache=True):
-    """target.search(track), remembered on disk: planning the same song again (a new plan, --force,
-    a re-run after a scoring change) does not spend the daily YouTube searches a second time."""
-    key = '|'.join([target.NAME, normalize(' '.join(track['artists']) + ' ' + track['title']),
-                    str((track.get('duration_ms') or 0) // 1000), track.get('isrc') or ''])
+def cache_key(target_name, track):
+    """'<target>|<sha256>': the hash hides the song, the prefix lets server.py count YouTube searches."""
+    rest = '|'.join([normalize(' '.join(track['artists']) + ' ' + track['title']),
+                     str((track.get('duration_ms') or 0) // 1000), track.get('isrc') or ''])
+    return f'{target_name}|' + hashlib.sha256(rest.encode()).hexdigest()
+
+
+def read_cache():
+    """The saved answers: expired ones, SoundCloud ones and bad entries dropped, old readable keys turned
+    into hashed ones. The file is written back at once if anything changed (never created if absent)."""
     now = time.time()
     try:
-        cache = json.loads(CACHE.read_text(encoding='utf-8'))
+        raw = json.loads(CACHE.read_text(encoding='utf-8'))
     except (OSError, ValueError):
-        cache = {}
-    cache = {k: v for k, v in cache.items()
-             if isinstance(v, dict) and now - v.get('at', 0) < CACHE_DAYS * 86400}
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    cache = {}
+    for key, value in raw.items():
+        if not isinstance(value, dict) or '|' not in key:
+            continue
+        at = value.get('at', 0)
+        if not isinstance(at, (int, float)) or now - at >= CACHE_DAYS * 86400:
+            continue
+        name, rest = key.split('|', 1)
+        if name == 'soundcloud':
+            continue
+        if not re.fullmatch('[0-9a-f]{64}', rest):
+            key = f'{name}|' + hashlib.sha256(rest.encode()).hexdigest()
+        if key in cache and cache[key].get('at', 0) >= at:
+            continue
+        cache[key] = value
+    if cache != raw:
+        save(CACHE, cache)
+    return cache
+
+
+def cached_search(target, track, use_cache=True):
+    """target.search(track), remembered on disk: planning the same song again (a new plan, --force,
+    a re-run after a scoring change) does not spend the daily YouTube searches a second time.
+    SoundCloud answers are never kept (its terms allow session caching only)."""
+    cache = read_cache()
+    if target.NAME == 'soundcloud':
+        return target.search(track)
+    key = cache_key(target.NAME, track)
     if use_cache and key in cache:
         return cache[key]['candidates']
-    cache[key] = {'at': now, 'candidates': target.search(track)}
+    cache[key] = {'at': time.time(), 'candidates': target.search(track)}
     save(CACHE, cache)   # shortcut: the whole file is rewritten per song; fine for thousands of songs
     return cache[key]['candidates']
 

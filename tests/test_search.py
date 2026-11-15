@@ -3,8 +3,10 @@ import contextlib
 import io
 import sys
 import tempfile
+import time
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -259,6 +261,37 @@ class Cache(unittest.TestCase):
         dorieplay.CACHE.write_text('not json', encoding='utf-8')
         self.make_plan()
         self.assertEqual(self.searched, ['Numb', 'Hello'])
+
+    def test_keys_hide_the_song_and_old_keys_keep_working(self):
+        now = time.time()
+        old = {}
+        for title, artist, seconds in (('Numb', 'Linkin Park', 187), ('Hello', 'Adele', 295)):
+            rest = '|'.join([dorieplay.normalize(f'{artist} {title}'), str(seconds), ''])
+            old[f'fake|{rest}'] = {'at': now, 'candidates': [found(title, artist, seconds)]}
+        old['soundcloud|x|1|'] = {'at': now, 'candidates': []}
+        dorieplay.CACHE.write_text(dorieplay.json.dumps(old), encoding='utf-8')
+        self.make_plan()
+        self.assertEqual(self.searched, [])
+        saved = dorieplay.json.loads(dorieplay.CACHE.read_text(encoding='utf-8'))
+        self.assertEqual(len(saved), 2)
+        for key in saved:
+            self.assertRegex(key, r'^fake\|[0-9a-f]{64}$')
+            self.assertNotIn('numb', key)
+            self.assertNotIn('hello', key)
+
+    def test_soundcloud_answers_are_never_saved(self):
+        with mock.patch.object(platforms.PLATFORMS['fake'], 'NAME', 'soundcloud'):
+            self.make_plan()
+            self.make_plan(force=True)
+        self.assertEqual(len(self.searched), 4)
+        if dorieplay.CACHE.exists():
+            saved = dorieplay.json.loads(dorieplay.CACHE.read_text(encoding='utf-8'))
+            self.assertFalse([k for k in saved if k.startswith('soundcloud|')])
+
+    def test_the_youtube_counter_still_sees_the_searches(self):
+        key = dorieplay.cache_key('youtube', song('Hello', ['Adele'], 295))
+        self.assertTrue(key.startswith('youtube|'))
+        self.assertEqual(len(key), len('youtube|') + 64)
 
 
 if __name__ == '__main__':
