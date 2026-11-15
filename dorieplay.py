@@ -79,8 +79,33 @@ def load(path):
     return plan
 
 
+# What a SoundCloud track tells about itself; SoundCloud's terms allow keeping it only for the session.
+SOURCE_FIELDS = ('title', 'artists', 'source_title', 'isrc', 'uploader', 'source_url')
+
+
 def describe(track):
+    if not track.get('title'):
+        return track.get('source_id') or '?'
     return f"{', '.join(track.get('artists') or [])} — {track.get('title')}"
+
+
+def clear_soundcloud(plan):
+    """After a clean transfer a plan that involves SoundCloud keeps ids only (changes and returns the plan)."""
+    if plan.get('to') == 'soundcloud':
+        for track in plan['tracks']:
+            keep = bool(track.get('approved') and track.get('match_id'))
+            if keep:
+                for candidate in track.get('candidates') or []:
+                    if track['match_id'] == candidate.get('url'):
+                        track['match_id'] = candidate['id']
+                        break
+            track['candidates'] = [{'id': track['match_id']}] if keep else []
+    if plan.get('from') == 'soundcloud':
+        for track in plan['tracks']:
+            for key in SOURCE_FIELDS:
+                track.pop(key, None)
+    plan['soundcloud_cleared'] = True
+    return plan
 
 
 def same_playlist(source, a, b):
@@ -174,6 +199,8 @@ def start_plan(args, source, target, name, tracks):
             or not (done or same_link)):
         raise ValueError(f'{path} belongs to another transfer or the playlist changed. '
                          'Use --plan other.json or --force to start over.')
+    if plan.get('soundcloud_cleared'):
+        raise ValueError(f'{path} lost its SoundCloud details. Use --plan other.json or --force to start over.')
     if len(done) == len(tracks):
         raise ValueError(f'{path} is already complete. Use --force to search again (your edits will be lost).')
     print(f'Resuming {path}: {len(done)} of {len(tracks)} songs already searched.')
@@ -232,8 +259,8 @@ def review_plan(args):
             print(f"   source: {track['source_title']}")
         for c in track.get('candidates') or []:
             mark = '*' if c.get('id') == track.get('match_id') else ' '
-            print(f"  {mark}{c.get('score') or 0:.2f} {c.get('seconds')}s [{c.get('artist')}] {c.get('title')}\n"
-                  f"     {c.get('url')}")
+            print(f"  {mark}{c.get('score') or 0:.2f} {c.get('seconds') or '—'}s [{c.get('artist') or '—'}] "
+                  f"{c.get('title') or '—'}\n     {c.get('url') or '—'}")
         if not track.get('candidates'):
             print('   nothing found')
     if pending:
@@ -265,6 +292,8 @@ def apply_plan(args):
             missing.append((item, label))
     # add_items returns the songs the platform refused, so one dead link does not block the rest.
     skipped = target.add_items(playlist_id, missing) or []
+    if not skipped and 'soundcloud' in (plan.get('from'), plan.get('to')):
+        clear_soundcloud(plan)
     save(args.plan, plan)
     print(f'{len(missing) - len(skipped)} added, {len(approved) - len(missing)} were already there.')
     if skipped:

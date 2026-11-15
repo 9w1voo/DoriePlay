@@ -61,6 +61,9 @@ class Case(unittest.TestCase):
         self.addCleanup(folder.cleanup)
         self.plan = str(Path(folder.name) / 'x.json')
         self.addCleanup(platforms.PLATFORMS.pop, 'fake', None)
+        cache = mock.patch.object(dorieplay, 'CACHE', Path(folder.name) / 'cache.json')
+        cache.start()
+        self.addCleanup(cache.stop)
 
     def quiet(self, function, *args):
         with contextlib.redirect_stdout(io.StringIO()) as out:
@@ -188,6 +191,112 @@ class Apply(Case):
         with self.assertRaisesRegex(ValueError, 'at most 1'):
             self.run_apply(fake, [approved('aaaaaaaaaaa'), approved('bbbbbbbbbbb')])
         self.assertEqual(fake.created, [])
+
+
+class Clear(Case):
+    def sc(self, **kwargs):
+        fake = Fake(**kwargs)
+        fake.NAME = 'soundcloud'
+        patch = mock.patch.dict(platforms.PLATFORMS, {'soundcloud': fake})
+        patch.start()
+        self.addCleanup(patch.stop)
+        return fake
+
+    def candidate(self, cid):
+        return {'id': cid, 'title': 'T', 'artist': 'A', 'seconds': 1, 'topic': False,
+                'url': f'https://soundcloud.com/a/{cid}', 'score': 0.9, 'clean': True, 'uploader': 'u'}
+
+    def put(self, source, target, tracks):
+        dorieplay.save(self.plan, {'name': 'n', 'source': 'u', 'from': source, 'to': target, 'tracks': tracks})
+
+    def apply(self):
+        return self.quiet(dorieplay.apply_plan, self.args())[0]
+
+    def test_a_clean_transfer_to_soundcloud_keeps_only_ids(self):
+        fake = self.sc()
+        one = {**approved('https://soundcloud.com/a/c1'), 'candidates': [self.candidate('c1'), self.candidate('c9')]}
+        two = {**approved('c2'), 'candidates': [self.candidate('c2')]}
+        three = {**track('s3'), 'approved': False, 'match_id': 'c3', 'candidates': [self.candidate('c3')]}
+        self.put('spotify', 'soundcloud', [one, two, three])
+        self.assertEqual(self.apply()['skipped'], [])
+        plan = dorieplay.load(self.plan)
+        first, second, third = plan['tracks']
+        self.assertEqual(first['candidates'], [{'id': 'c1'}])
+        self.assertEqual(first['match_id'], 'c1')
+        self.assertEqual(second['candidates'], [{'id': 'c2'}])
+        self.assertEqual(third['candidates'], [])
+        self.assertIs(plan['soundcloud_cleared'], True)
+        self.assertEqual(first['title'], 'Song')
+        self.assertNotIn('soundcloud.com', Path(self.plan).read_text(encoding='utf-8'))
+        fake.existing = {'c1': 1, 'c2': 1}
+        fake.added.clear()
+        result = self.apply()
+        self.assertEqual(fake.added, [])
+        self.assertEqual(result['skipped'], [])
+
+    def test_from_soundcloud_titles_go_and_ids_stay(self):
+        self.sc()
+        platforms.PLATFORMS['fake'] = Fake()
+        full = {'uploader': 'u', 'source_url': 'https://soundcloud.com/a/b', 'isrc': 'X', 'source_title': 'S'}
+        self.put('soundcloud', 'fake', [{**approved('aaaaaaaaaaa'), **full, 'source_id': 'src1'}])
+        self.apply()
+        found = dorieplay.load(self.plan)['tracks'][0]
+        for key in dorieplay.SOURCE_FIELDS:
+            self.assertNotIn(key, found)
+        self.assertEqual((found['source_id'], found['duration_ms'], found['approved'], found['match_id']),
+                         ('src1', 1000, True, 'aaaaaaaaaaa'))
+        self.assertEqual(dorieplay.describe(found), found['source_id'])
+
+    def test_nothing_is_cleared_while_songs_are_left_out(self):
+        fake = self.sc(refuse={'bad'})
+        good = {**approved('good'), 'candidates': [self.candidate('good')]}
+        bad = {**approved('bad'), 'candidates': [self.candidate('bad')]}
+        self.put('spotify', 'soundcloud', [good, bad])
+        self.assertEqual(len(self.apply()['skipped']), 1)
+        plan = dorieplay.load(self.plan)
+        self.assertNotIn('soundcloud_cleared', plan)
+        self.assertEqual(plan['tracks'][0]['title'], 'Song')
+        self.assertEqual(len(plan['tracks'][1]['candidates']), 1)
+        plan['tracks'][1]['match_id'] = 'other'
+        dorieplay.save(self.plan, plan)
+        fake.existing = {'good': 1}
+        self.assertEqual(self.apply()['skipped'], [])
+        self.assertIs(dorieplay.load(self.plan)['soundcloud_cleared'], True)
+
+    def test_review_survives_a_cleared_plan(self):
+        self.sc()
+        platforms.PLATFORMS['fake'] = Fake()
+        gone = {'source_id': 'src9', 'duration_ms': 2000, 'approved': False, 'match_id': None, 'candidates': []}
+        self.put('soundcloud', 'fake', [{**approved('aaaaaaaaaaa'), 'source_id': 'src1'}, gone])
+        self.apply()
+        _, out = self.quiet(dorieplay.review_plan, self.args())
+        self.assertIn('src9', out)
+
+    def test_a_cleared_plan_is_not_resumed_without_force(self):
+        source = types.SimpleNamespace(NAME='spotify', LABEL='Spotify',
+                                       read_playlist=lambda url: ('n', [track('1')]))
+        target = self.sc()
+        target.search = lambda t: []
+        self.put('spotify', 'soundcloud', [])
+        plan = dorieplay.load(self.plan)
+        plan['soundcloud_cleared'] = True
+        dorieplay.save(self.plan, plan)
+        args = lambda force: types.SimpleNamespace(plan=self.plan, playlist='u', to='soundcloud', no_cache=True, force=force)
+        with mock.patch.object(platforms, 'detect', return_value=source):
+            with self.assertRaisesRegex(ValueError, 'lost its SoundCloud details'):
+                self.quiet(dorieplay.make_plan, args(False))
+            self.quiet(dorieplay.make_plan, args(True))
+        self.assertNotIn('soundcloud_cleared', dorieplay.load(self.plan))
+
+    def test_other_transfers_are_untouched(self):
+        platforms.PLATFORMS['fake'] = Fake()
+        one = {**approved('aaaaaaaaaaa'), 'candidates': [{'id': 'aaaaaaaaaaa', 'url': 'https://y/1', 'title': 'T'}]}
+        self.put('spotify', 'fake', [one])
+        before = json.loads(Path(self.plan).read_text(encoding='utf-8'))
+        self.apply()
+        after = json.loads(Path(self.plan).read_text(encoding='utf-8'))
+        after.pop('target_playlist_id')
+        self.assertEqual(before, after)
 
 
 class PlanFile(Case):
