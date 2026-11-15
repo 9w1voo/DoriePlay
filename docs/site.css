@@ -50,7 +50,6 @@ th { width: 9em; }
 .policy ul { padding-left: 22px; }
 .policy li { margin: 4px 0; }
 code { font: 0.9em ui-monospace, "SF Mono", Menlo, monospace; }
-.draft { padding: 10px 14px; border: 1px dashed var(--accent); border-radius: 12px; font-size: 0.95rem; }
 footer { padding: 30px 0 50px; color: var(--muted); font-size: 0.9rem; }
 img { max-width: 100%; }
 @media (max-width: 640px) {

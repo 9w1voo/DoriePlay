@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://dorieplay.com/sitemap.xml
