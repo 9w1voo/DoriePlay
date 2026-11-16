@@ -25,7 +25,7 @@ import dorieplay
 import paths
 import platforms
 import version
-from platforms import signin
+from platforms import signin, youtube
 
 WEB = Path(__file__).resolve().parent / 'web'   # the page: part of the program, read only
 PLANS = paths.data_folder() / 'plans'
@@ -362,7 +362,7 @@ class App:
 
     def run(self, kind, name, work):
         job = self.job = {'kind': kind, 'plan': name, 'state': 'running', 'done': 0, 'total': 0,
-                          'lines': [], 'error': '', 'result': None, 'signin': None}
+                          'lines': [], 'error': '', 'result': None, 'signin': None, 'quota': False}
 
         def target():
             try:
@@ -370,6 +370,8 @@ class App:
                     work(job)
                 job['state'] = 'done'
             except Exception as error:   # shown to the user; progress so far is in the plan file
+                # the page shows the YouTube limit by this flag, never by reading the English error text
+                job['quota'] = str(error) == youtube.QUOTA_MESSAGE
                 job['error'], job['state'] = f'{error}', 'error'
         threading.Thread(target=target, daemon=True).start()
         return job

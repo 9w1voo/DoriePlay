@@ -453,6 +453,7 @@ function signinCard(signin) {
     .then(() => toast(t('signinCopied')), () => { field.focus(); field.select(); });
   const node = el('div', { class: 'signin' },
     el('h3', { text: t('signinTitle', { service: signin.service }) }),
+    tip('wave', t('tipSignin', { service: signin.service })),
     el('a', { class: 'btn primary', href: signin.url, target: '_blank', rel: 'noopener noreferrer', text: t('signinOpen') }),
     field,
     el('button', { class: 'btn ghost', type: 'button', text: t('signinCopy'), onclick: copy }),
@@ -467,19 +468,21 @@ function jobCard(job) {
   // After an error the sign-in server is closed and the link is dead: the error says what to do.
   const signin = job.state === 'running' && job.signin && isSigninLink(job.signin.url) ? signinCard(job.signin) : null;
   if (!signin) S.signin = null;
+  const progress = job.total ? t('xOfY', job) : (searching ? t('readingPlaylist') : t('preparing'));
   if (job.state === 'error') {
     return el('div', { class: 'card job bad' },
       el('h2', { text: searching ? t('searchStopped') : checking ? t('checkStopped') : t('transferStopped') }),
       el('p', { class: 'job-error', text: job.error }),
-      el('p', { class: 'hint', text: t('savedHint') }));
+      // the YouTube limit: the search allows about 100 songs a day, adding about 200 (a different text)
+      job.quota ? tip('yawn', job.kind === 'plan' ? t('tipQuota') : t('tipQuotaAdd'), t('savedHint'))
+        : tip('stand', t('tipStopped'), t('savedHint')));
   }
   return el('div', { class: 'card job' },
     el('h2', { text: searching ? t('searching') : checking ? t('checking') : t('adding') }),
     signin,
     el('div', { class: 'bar', role: 'progressbar', 'aria-valuenow': share, 'aria-valuemin': 0, 'aria-valuemax': 100 },
       el('span', { style: `width:${job.total ? share : 4}%` })),
-    el('p', { class: job.total ? 'job-count' : 'job-wait', text: job.total ? t('xOfY', job)
-      : (searching ? t('readingPlaylist') : t('preparing')) }),
+    tip('jump', progress, el('p', { class: job.total ? 'job-count' : 'job-wait', text: progress })),
     el('p', { class: 'job-line', text: job.lines[job.lines.length - 1] || '' }));
 }
 

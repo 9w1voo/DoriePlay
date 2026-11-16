@@ -5,6 +5,10 @@
 window.I18N = {
   en: {
     _name: 'English',
+    tipSignin: 'Sign in to {service} in the browser. I never see your password.',
+    tipStopped: 'Something stopped me. Your progress is saved — just try again.',
+    tipQuota: 'YouTube lets me search about 100 songs a day. I’ll continue tomorrow.',
+    tipQuotaAdd: 'YouTube’s daily limit is used up. Press the button again tomorrow — I’ll continue where I stopped.',
     tipsHide: 'Hide tips', tipsShow: 'Show tips', tipHow: 'How do I get the link?',
     tipHello: 'Hey! I’ll show you how it works. It takes a minute.',
     tipEmpty: 'Copy your playlist link and paste it here.',
@@ -109,6 +113,10 @@ window.I18N = {
   },
   uk: {
     _name: 'Українська',
+    tipSignin: 'Увійди в {service} у браузері. Твого пароля я не бачу.',
+    tipStopped: 'Щось мене зупинило. Зроблене збережено — просто спробуй ще раз.',
+    tipQuota: 'YouTube дає шукати близько 100 пісень на день. Продовжу завтра.',
+    tipQuotaAdd: 'Денний ліміт YouTube вичерпано. Натисни кнопку ще раз завтра — продовжу з того місця, де зупинився.',
     tipsHide: 'Сховати підказки', tipsShow: 'Показати підказки', tipHow: 'Як узяти посилання?',
     tipHello: 'Привіт! Покажу, як це працює. Це на хвилину.',
     tipEmpty: 'Скопіюй посилання на плейлист і встав сюди.',
@@ -213,6 +221,10 @@ window.I18N = {
   },
   nl: {
     _name: 'Nederlands',
+    tipSignin: 'Log in bij {service} in de browser. Je wachtwoord zie ik nooit.',
+    tipStopped: 'Er hield me iets tegen. Wat al klaar is, is bewaard — probeer het gewoon opnieuw.',
+    tipQuota: 'YouTube laat me zo’n 100 nummers per dag zoeken. Morgen ga ik verder.',
+    tipQuotaAdd: 'De daglimiet van YouTube is op. Druk morgen weer op de knop — ik ga verder waar ik stopte.',
     tipsHide: 'Tips verbergen', tipsShow: 'Tips tonen', tipHow: 'Hoe krijg ik de link?',
     tipHello: 'Hoi! Ik laat je zien hoe het werkt. Het duurt een minuutje.',
     tipEmpty: 'Kopieer de link van je afspeellijst en plak hem hier.',
@@ -317,6 +329,10 @@ window.I18N = {
   },
   ru: {
     _name: 'Русский',
+    tipSignin: 'Войди в {service} в браузере. Твоего пароля я не вижу.',
+    tipStopped: 'Что-то меня остановило. Сделанное сохранено — просто попробуй ещё раз.',
+    tipQuota: 'YouTube даёт мне искать около 100 песен в день. Продолжу завтра.',
+    tipQuotaAdd: 'Дневной лимит YouTube исчерпан. Нажми кнопку ещё раз завтра — продолжу с того места, где остановился.',
     tipsHide: 'Скрыть подсказки', tipsShow: 'Показать подсказки', tipHow: 'Как взять ссылку?',
     tipHello: 'Привет! Покажу, как всё работает. Это на минутку.',
     tipEmpty: 'Скопируй ссылку на плейлист и вставь сюда.',
@@ -421,6 +437,10 @@ window.I18N = {
   },
   es: {
     _name: 'Español',
+    tipSignin: 'Inicia sesión en {service} en el navegador. Nunca veo tu contraseña.',
+    tipStopped: 'Algo me ha parado. Lo hecho está guardado: inténtalo otra vez.',
+    tipQuota: 'YouTube me deja buscar unas 100 canciones al día. Sigo mañana.',
+    tipQuotaAdd: 'Se acabó el límite diario de YouTube. Pulsa el botón otra vez mañana: sigo donde me quedé.',
     tipsHide: 'Ocultar consejos', tipsShow: 'Mostrar consejos', tipHow: '¿Cómo consigo el enlace?',
     tipHello: '¡Hola! Te enseño cómo funciona. Es un minuto.',
     tipEmpty: 'Copia el enlace de tu lista y pégalo aquí.',

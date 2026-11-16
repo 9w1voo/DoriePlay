@@ -187,6 +187,20 @@ class Flow(ServerCase):
         self.assertIsNone(job['signin'])
         self.assertEqual(job['lines'][-1], 'Sign in to Spotify in your browser: https://evil.example/')
 
+    def test_a_youtube_limit_marks_the_job(self):
+        go = threading.Event()
+
+        def limit(job):
+            go.wait(5)   # held, so the flag can be read before the job ends
+            raise RuntimeError(youtube.QUOTA_MESSAGE)
+        self.assertIs(self.app.run('plan', 'q', limit)['quota'], False)
+        go.set()
+        job = self.wait()
+        self.assertEqual((job['state'], job['quota']), ('error', True))
+        self.app.run('apply', 'q', lambda job: 1 / 0)
+        job = self.wait()
+        self.assertEqual((job['state'], job['quota']), ('error', False))
+
     def test_the_song_base_switch_is_saved(self):
         with mock.patch.dict(os.environ):
             os.environ.pop('DORIEPLAY_SONGBASE')
