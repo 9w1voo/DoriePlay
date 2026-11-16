@@ -21,6 +21,14 @@ function t(key, vars) {
   return String(text).replace(/\{(\w+)\}/g, (whole, name) => (vars && name in vars ? vars[name] : whole));
 }
 
+// The mascot gives the tips: on until the user hides them; hidden, the old grey hint line comes back.
+let tipsOn = store.get('tips') !== 'off';
+// plain: the hint shown when tips are hidden — a text (a grey line), a node (shown as is) or nothing.
+function tip(pose, text, plain, extra) {
+  if (!tipsOn) return typeof plain === 'string' ? el('p', { class: 'hint', text: plain }) : plain || null;
+  return el('div', { class: 'tip' }, window.Mascot.node(pose), el('div', { class: 'bubble' }, el('span', { text }), extra));
+}
+
 const S = { state: null, plan: null, filter: null, open: new Set(), playing: new Map(), timer: null, target: null,
             setup: null, link: '', files: null };
 
@@ -175,6 +183,19 @@ function drawThemes() {
   }, el('span', { class: 'swatch', 'aria-hidden': 'true' }), t(key))));
 }
 
+function drawTipsSwitch() {
+  const name = tipsOn ? t('tipsHide') : t('tipsShow');
+  document.getElementById('tips-switch').replaceChildren(el('button', {
+    class: 'tips-toggle', type: 'button', title: name, 'aria-label': name, 'aria-pressed': String(tipsOn),
+    onclick() {
+      tipsOn = !tipsOn;
+      store.set('tips', tipsOn ? 'on' : 'off');
+      S.signin = null;   // the sign-in card is kept while its link waits: rebuild it with or without the tip
+      drawTipsSwitch(); route();
+    },
+  }, window.Mascot.node('stand')));
+}
+
 function drawLanguages() {   // small flags; the language's own name is the button's name and tooltip
   const box = document.getElementById('lang');
   box.setAttribute('aria-label', t('language'));
@@ -185,7 +206,8 @@ function drawLanguages() {   // small flags; the language's own name is the butt
       lang = code;
       store.set('lang', lang);
       document.documentElement.lang = lang;
-      drawThemes(); drawLanguages(); route();
+      S.signin = null;   // the kept sign-in card is in the old language
+      drawThemes(); drawLanguages(); drawTipsSwitch(); route();
     },
   }, el('img', { src: `/flag-${code}.svg`, alt: '', width: 20, height: 14 }))));
 }
@@ -212,7 +234,7 @@ function home() {
   const input = el('textarea', { class: 'link-input', rows: 1, autocomplete: 'off', spellcheck: 'false',
     placeholder: t('linkPlaceholder'), 'aria-label': t('linkLabel'), text: S.link });
   const targets = el('div', { class: 'tiles', role: 'group', 'aria-label': t('whereTo') });
-  const hint = el('p', { class: 'hint' });
+  const hint = el('div', { class: 'hint-slot' });
   const go = el('button', { class: 'btn primary big', type: 'submit', text: t('findSongs') });
   // A Spotify data file: read here, in the page; the chosen playlist becomes lines in the song field.
   const picker = el('input', { type: 'file', accept: '.json,application/json', hidden: true, async onchange() {
@@ -243,9 +265,17 @@ function home() {
       class: 'tile', type: 'button', disabled: p.name === source, 'aria-label': p.label,
       'aria-pressed': String(p.name === S.target), onclick() { S.target = p.name; drawTargets(); },
     }, p.name === source ? el('span', { class: 'svc-name', text: p.label }) : serviceMark(p))));
-    hint.textContent = !input.value.trim() ? t('hintEmpty')
-      : source === 'text' ? t('hintText', { songs: songs(listLines(input.value)) })
-      : source ? t('hintFrom', { from: label(source) }) : t('hintUnknown');
+    const text = input.value.trim(), button = t('findSongs');
+    if (text) store.set('greeted', '1');   // the greeting is for the very first visit only
+    const how = el('button', { class: 'link', type: 'button', text: t('tipHow'), onclick() { S.how = !S.how; drawTargets(); } });
+    const count = songs(listLines(input.value));
+    // every branch has its grey line, so hidden tips never leave the slot empty
+    hint.replaceChildren(!text ? (S.how ? tip('think', t('tipHowLink'), t('hintEmpty'), how)
+        : store.get('greeted') ? tip('point_up', t('tipEmpty'), t('hintEmpty'), how)
+        : tip('wave', t('tipHello'), t('hintEmpty'), how))
+      : source === 'text' ? tip('thumbs_up', t('tipGotList', { songs: count, button }), t('hintText', { songs: count }))
+      : source ? tip('thumbs_up', t('tipGot', { service: label(source), button }), t('hintFrom', { from: label(source) }))
+      : tip('shrug', t('tipUnknown'), t('hintUnknown')));
     go.disabled = !source || !S.target;
   }
   input.addEventListener('input', drawTargets);
@@ -717,6 +747,7 @@ async function route() {
 document.addEventListener('DOMContentLoaded', () => {
   drawThemes();
   drawLanguages();
+  drawTipsSwitch();
   window.addEventListener('hashchange', route);
   route();
 });
