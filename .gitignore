@@ -24,3 +24,5 @@ discogs_*.xml.gz
 # the token service's code is not a secret, although its name matches *token*
 !amtoken.py
 !tests/test_amtoken.py
+webview/
+*.log
