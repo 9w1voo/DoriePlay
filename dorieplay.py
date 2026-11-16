@@ -303,9 +303,12 @@ def apply_plan(args):
         clear_soundcloud(plan)
     save(args.plan, plan)
     print(f'{len(missing) - len(skipped)} added, {len(approved) - len(missing)} were already there.')
-    if undecided:
-        print(f'{undecided} songs still needed a decision; their SoundCloud details were removed with the rest, '
-              'as SoundCloud’s rules require. To transfer them later, make a new plan.')
+    if undecided and plan.get('to') == 'soundcloud':
+        print(f'Songs that still needed a decision: {undecided}. Their SoundCloud details were removed with the rest, '
+              'as SoundCloud’s rules require, so they can no longer be chosen in this plan.')
+    elif undecided:   # from SoundCloud: the target's candidates stay, only the SoundCloud names go
+        print(f'Songs that still need a decision: {undecided}. Their SoundCloud titles were removed, '
+              'as SoundCloud’s rules require; their candidates are still in the plan.')
     if skipped:
         print(f'{len(skipped)} could not be added:')
         for label, reason in skipped:

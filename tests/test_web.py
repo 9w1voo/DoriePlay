@@ -115,9 +115,9 @@ def top_level_arguments(source, start):
 
 class Children(unittest.TestCase):
     def test_no_condition_is_handed_straight_to_replace_children(self):
-        # el() skips false children, but node.replaceChildren(false) shows the word "false" on the page
+        # el() skips false children, but node.replaceChildren(false) (or append, before, ...) shows the word "false"
         page = (WEB / 'app.js').read_text(encoding='utf-8')
-        calls = [m.end() - 1 for m in re.finditer(r'\.replaceChildren\(', page)]
+        calls = [m.end() - 1 for m in re.finditer(r'\.(?:replaceChildren|append|prepend|replaceWith|before|after)\(', page)]
         self.assertGreater(len(calls), 5)
         for start in calls:
             for argument, condition in top_level_arguments(page, start):

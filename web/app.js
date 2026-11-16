@@ -572,7 +572,9 @@ function confirmApply(count, ask) {
       : S.plan.to === 'spotify' ? t('createBodySpotify', { title: S.plan.title, count })
       : t('createBody', { to: label(S.plan.to), title: S.plan.title, count }) }),
     ask > 0 && !S.plan.cleared && (S.plan.from === 'soundcloud' || S.plan.to === 'soundcloud')
-      && el('p', { class: 'hint', text: t('scPendingLost', { count: ask }) }),
+      // to SoundCloud the undecided lose their candidates; from SoundCloud they keep them but lose their names
+      && el('p', { class: 'hint', text: S.plan.to === 'soundcloud' ? t('scPendingLost', { count: ask })
+        : t('scPendingNames', { count: ask }) }),
     !S.plan.applied && spotifyNote(),
     el('div', { class: 'dialog-actions' },
       el('button', { class: 'btn ghost', type: 'button', text: t('cancel'), onclick: () => dialog.close() }),

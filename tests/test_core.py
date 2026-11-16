@@ -259,7 +259,22 @@ class Clear(Case):
         done = {**approved('c1'), 'candidates': [self.candidate('c1')]}
         waiting = {**track('s2'), 'approved': False, 'match_id': None, 'candidates': [self.candidate('c2')]}
         self.put('spotify', 'soundcloud', [done, waiting])
-        self.assertIn('1 songs still needed a decision', self.output())
+        out = self.output()
+        self.assertIn('Songs that still needed a decision: 1.', out)
+        self.assertIn('can no longer be chosen', out)
+        self.assertNotIn('new plan', out)   # a new plan would make a second playlist
+
+    def test_from_soundcloud_the_undecided_keep_their_candidates(self):
+        self.sc()
+        platforms.PLATFORMS['fake'] = Fake()
+        done = {**approved('aaaaaaaaaaa'), 'candidates': [self.candidate('aaaaaaaaaaa')]}
+        waiting = {**track('s2'), 'approved': False, 'match_id': None, 'candidates': [self.candidate('bbbbbbbbbbb')]}
+        self.put('soundcloud', 'fake', [done, waiting])
+        out = self.output()
+        self.assertIn('Songs that still need a decision: 1.', out)
+        self.assertIn('their candidates are still in the plan', out)
+        self.assertNotIn('can no longer be chosen', out)
+        self.assertEqual(len(dorieplay.load(self.plan)['tracks'][1]['candidates']), 1)
 
     def test_no_warning_when_all_are_decided_or_none_wait(self):
         self.sc()
@@ -267,7 +282,7 @@ class Clear(Case):
         passed = {**track('s2'), 'approved': False, 'decided': True, 'match_id': None,
                   'candidates': [self.candidate('c2')]}
         self.put('spotify', 'soundcloud', [done, passed])
-        self.assertNotIn('still needed a decision', self.output())
+        self.assertNotIn('still need', self.output())
 
     def test_no_warning_while_songs_are_skipped(self):
         self.sc(refuse={'bad'})
@@ -275,7 +290,7 @@ class Clear(Case):
         bad = {**approved('bad'), 'candidates': [self.candidate('bad')]}
         waiting = {**track('s3'), 'approved': False, 'match_id': None, 'candidates': [self.candidate('c3')]}
         self.put('spotify', 'soundcloud', [good, bad, waiting])
-        self.assertNotIn('still needed a decision', self.output())
+        self.assertNotIn('still need', self.output())
 
     def test_nothing_is_cleared_while_songs_are_left_out(self):
         fake = self.sc(refuse={'bad'})
