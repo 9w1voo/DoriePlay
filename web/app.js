@@ -313,7 +313,7 @@ function home() {
     S.state.update && el('div', { class: 'banner' }, `${t('updateText', { version: S.state.update.version })} `,
       el('a', { href: RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('updateLink') })),
     S.state.demo && el('div', { class: 'banner' },
-      el('strong', { text: t('demoStrong') }), ` ${t('demoText')} `,
+      el('strong', { text: t('demoStrong') }), ` ${t('demoText')} ${t('demoLeave')} `,
       el('button', { class: 'link', type: 'button', text: t('demoPaste'), onclick() {
         input.value = 'https://open.spotify.com/playlist/demo'; drawTargets(); input.focus();
       } })),
@@ -426,7 +426,13 @@ function connectionsSection() {
         onclick() { S.setup = S.setup === p.name ? null : p.name; redrawHome(); } }),
       S.setup === p.name && !p.no_key && setupPanel(p)))),
     songbaseRow(),
-    el('p', { class: 'hint', text: t('ytLeft', { left }) }));
+    el('p', { class: 'hint', text: t('ytLeft', { left }) }),
+    !S.state.demo && el('p', { class: 'hint' }, t('demoTryHint') + ' ',
+      el('button', { class: 'link', type: 'button', text: t('demoTry'), async onclick() {
+        this.disabled = true;
+        try { S.state = await api('demo', {}); redrawHome(); scrollTo(0, 0); }
+        catch (error) { this.disabled = false; toast(error.message, true); }
+      } })));
 }
 
 function songbaseRow() {   // not in the demo (it never asks the base); an older server sends no songbase

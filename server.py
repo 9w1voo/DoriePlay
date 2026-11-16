@@ -141,6 +141,14 @@ class App:
                 found.append(self.summary(path.stem, dorieplay.load(path)))
         return sorted(found, key=lambda plan: plan['updated'], reverse=True)
 
+    def start_demo(self):
+        """The page's "Try the demo": invented services until the program is started again."""
+        if not self.demo:
+            if self.busy():
+                raise ApiError(409, 'Wait until the search or transfer has finished.')
+            self.plans, self.demo = use_demo(), True
+        return self.state()
+
     def busy(self, name=None):
         job = self.job
         return bool(job and job['state'] == 'running' and (name is None or job['plan'] == name))
@@ -435,6 +443,8 @@ def make_handler(app, port):
                     return self.reply(200, app.start_apply(parts[1]))
                 if method == 'POST' and len(parts) == 3 and parts[0] == 'plans' and parts[2] == 'check':
                     return self.reply(200, app.start_check(parts[1]))
+                if (method, parts) == ('POST', ['demo']):
+                    return self.reply(200, app.start_demo())
                 if (method, parts) == ('POST', ['settings']):
                     return self.reply(200, app.save_settings(body))
                 if method == 'POST' and len(parts) == 2 and parts[0] == 'keys':
@@ -470,10 +480,8 @@ def serve(app, port=0):
     return server, server.server_address[1]
 
 
-def make_app(demo):
-    """The app over the real services, or over invented ones in a scratch folder (--demo)."""
-    if not demo:
-        return App(PLANS)
+def use_demo():
+    """Invented services and a scratch folder for the rest of this run; returns the demo's plans folder."""
     import demo as fake
     platforms.PLATFORMS.clear()
     platforms.PLATFORMS.update(fake.platforms_for_demo())
@@ -481,7 +489,12 @@ def make_app(demo):
     dorieplay.CACHE = scratch / 'cache.json'   # the demo neither reads nor fills the real cache
     dorieplay.SETTINGS = scratch / 'settings.json'
     os.environ['DORIEPLAY_SONGBASE'] = ''   # invented songs: never ask the real song base
-    return App(scratch / 'plans', demo=True)
+    return scratch / 'plans'
+
+
+def make_app(demo):
+    """The app over the real services, or over invented ones in a scratch folder (--demo)."""
+    return App(use_demo(), demo=True) if demo else App(PLANS)
 
 
 def main():

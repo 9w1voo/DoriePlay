@@ -377,6 +377,31 @@ class Version(ServerCase):
         self.assertEqual((state['version'], state['update']), ('1.0.0', None))
 
 
+class DemoSwitch(ServerCase):
+    """The page's "Try the demo": a Store reviewer or a new user with no keys looks around without any account."""
+
+    def test_the_page_switches_to_the_demo_until_the_next_start(self):
+        own = self.app.plans
+        self.app.demo = False
+        self.app.job = {'state': 'running', 'plan': 'x'}
+        self.assertEqual(self.call('/api/demo', {})[0], 409)   # never in the middle of a search or transfer
+        self.assertFalse(self.app.demo)
+        self.app.job = None
+        platforms.PLATFORMS.clear()
+        platforms.PLATFORMS['real'] = object()   # stands for the real services
+        status, state = self.call('/api/demo', {})
+        self.addCleanup(shutil.rmtree, self.app.plans.parent, True)
+        self.assertEqual(status, 200)
+        self.assertTrue(state['demo'])
+        self.assertEqual(state['plans'], [])
+        self.assertNotEqual(self.app.plans, own)
+        self.assertEqual(os.environ['DORIEPLAY_SONGBASE'], '')
+        self.assertEqual(sorted(platforms.PLATFORMS), ['soundcloud', 'spotify', 'youtube'])
+        self.assertIsInstance(platforms.PLATFORMS['spotify'], demo.Fake)
+        self.assertEqual(dorieplay.CACHE.parent, self.app.plans.parent)   # the real cache is left alone
+        self.assertEqual(self.call('/api/demo', {})[1]['demo'], True)   # a second press changes nothing
+
+
 class DemoApp(unittest.TestCase):
     def test_the_demo_switches_the_song_base_off(self):
         environment = mock.patch.dict(os.environ)
