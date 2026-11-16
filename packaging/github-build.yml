@@ -18,6 +18,7 @@ env:
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 40   # a modal error box in the built program would otherwise hang the job for hours
     defaults:
       run:
         shell: bash
@@ -27,7 +28,7 @@ jobs:
         with:
           python-version: '3.14'
       - name: Install
-        run: python -m pip install --disable-pip-version-check -r requirements-window.txt pyinstaller
+        run: python -m pip install --disable-pip-version-check -r requirements-window.txt pyinstaller==6.22.3
       - name: Tests
         # failures go out as one annotation: job logs need a login, annotations do not
         run: |
@@ -35,19 +36,28 @@ jobs:
             echo "::error title=tests::$(tail -c 6000 test.log | python -c 'import sys; print(sys.stdin.read().replace("%", "%25").replace("\r", "").replace("\n", "%0A"))')"
             exit 1; }
       - name: Build the Store package
-        run: powershell -ExecutionPolicy Bypass -File packaging/windows/build.ps1
+        run: pwsh -File packaging/windows/build.ps1
       - name: Check the built program
+        # the demo, served without a window: page, files, API, a whole demo search; then nothing private inside
         run: |
-          ./dist/DoriePlay/DoriePlay.exe --self-test || { echo "::error title=self-test::window libraries do not load"; exit 1; }
+          fail() { echo "::error title=built program::$1"; exit 1; }
+          ./dist/DoriePlay/DoriePlay.exe --self-test || fail "window libraries do not load"
           ./dist/DoriePlay/DoriePlay.exe --demo --no-window --port 8790 &
+          trap 'kill $! 2>/dev/null' EXIT
           for i in $(seq 30); do curl -sf -o page.html http://127.0.0.1:8790/ && break; sleep 1; done
-          token=$(grep -o 'name="dorie-token" content="[^"]*"' page.html | sed 's/.*content="//; s/"$//')
-          test -n "$token" || { echo "::error title=built program::the page did not load"; exit 1; }
-          curl -sf -o /dev/null -H "X-Dorie-Token: $token" http://127.0.0.1:8790/api/state ||
-            { echo "::error title=built program::/api/state failed"; exit 1; }
-          test -f dist/DoriePlay/_internal/certifi/cacert.pem || { echo "::error title=built program::no certifi"; exit 1; }
-          if find dist -name '*.sqlite' -o -name 'CLAUDE.md' -o -name '*token*.json' | grep -q .; then
-            echo "::error title=built program::private files in the build"; exit 1; fi
+          token=$(sed -n 's/.*name="dorie-token" content="\([^"]*\)".*/\1/p' page.html 2>/dev/null || true)
+          test -n "$token" || fail "the page did not load on port 8790"
+          for f in app.js app.css i18n.js mascot.js logo.svg; do
+            curl -sf -o /dev/null "http://127.0.0.1:8790/$f" || fail "/$f missing"; done
+          api() { curl -sf -H "X-Dorie-Token: $token" -H 'Content-Type: application/json' "$@"; }
+          api -o /dev/null http://127.0.0.1:8790/api/state || fail "/api/state failed"
+          api -d '{"url": "https://open.spotify.com/playlist/demo", "to": "youtube"}' http://127.0.0.1:8790/api/plans > /dev/null ||
+            fail "a demo search did not start"
+          for i in $(seq 60); do api http://127.0.0.1:8790/api/job | grep -q '"state": "done"' && break; sleep 1; done
+          api http://127.0.0.1:8790/api/job | grep -q '"state": "done"' || fail "the demo search did not finish"
+          test -f dist/DoriePlay/_internal/certifi/cacert.pem || fail "no certifi"
+          found=$(find dist/DoriePlay \( -name '*.sqlite' -o -name 'CLAUDE.md' -o -name '*token*.json' -o -name plans -o -name design \) -print)
+          test -z "$found" || fail "private files in the build: $found"
           echo "built program ok"
       - uses: actions/upload-artifact@v4
         with:
@@ -57,14 +67,15 @@ jobs:
             dist/DoriePlay/
 
   mac:
-    runs-on: macos-latest
+    runs-on: macos-latest   # Apple silicon: the dmg is arm64 only
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
       - name: Install
-        run: python -m pip install --disable-pip-version-check -r requirements-window.txt pyinstaller
+        run: python -m pip install --disable-pip-version-check -r requirements-window.txt pyinstaller==6.22.3
       - name: Tests
         run: python -m unittest discover tests
       - name: Build

@@ -78,13 +78,19 @@ def already_running():
     global _mutex
     if sys.platform != 'win32':
         return False
-    kernel32 = ctypes.windll.kernel32
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)   # GetLastError() via ctypes can be stale
+    kernel32.CreateMutexW.argtypes = (ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
     _mutex = kernel32.CreateMutexW(None, False, MUTEX)
-    return kernel32.GetLastError() == 183   # ERROR_ALREADY_EXISTS
+    return ctypes.get_last_error() == 183   # ERROR_ALREADY_EXISTS
 
 
 def bring_to_front():
-    user32 = ctypes.windll.user32
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL('user32')
+    user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
+    user32.FindWindowW.restype = wintypes.HWND
     handle = user32.FindWindowW(None, TITLE)
     if handle:
         if user32.IsIconic(handle):

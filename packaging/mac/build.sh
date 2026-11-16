@@ -4,6 +4,8 @@
 #   sh packaging/mac/build.sh [python]
 set -eu
 PYTHON=${1:-python3}
+cd "$(dirname "$0")/../.."   # the project folder
+export PYINSTALLER_STRICT_BUNDLE_CODESIGN_ERROR=1   # a broken signature stops the build, not the user
 PYTHONUTF8=1 "$PYTHON" -m PyInstaller packaging/dorieplay.spec --noconfirm --distpath dist --workpath build
 APP="dist/Dorie Play.app"
 codesign --verify --deep --strict "$APP"

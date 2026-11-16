@@ -65,12 +65,12 @@ class Window(unittest.TestCase):
             self.assertIs(fake.confirm_close, busy)
 
     def test_a_failed_start_is_logged_somewhere_readable(self):
-        with tempfile.TemporaryDirectory() as scratch:
+        with tempfile.TemporaryDirectory() as scratch, tempfile.TemporaryDirectory() as temp:
             blocker = Path(scratch) / 'file'
             blocker.write_text('not a folder')
-            fallback = Path(tempfile.gettempdir()) / 'dorieplay-startup.log'
-            self.addCleanup(fallback.unlink, missing_ok=True)
-            with mock.patch.object(window, 'LOG', blocker / 'startup.log'):
+            fallback = Path(temp) / 'dorieplay-startup.log'   # never the real temp folder's log
+            with mock.patch.object(window, 'LOG', blocker / 'startup.log'), \
+                    mock.patch.object(window.tempfile, 'gettempdir', lambda: temp):
                 self.assertEqual(window.log_error('x'), fallback)
             self.assertIn('x', fallback.read_text(encoding='utf-8'))
 
@@ -86,25 +86,26 @@ class Window(unittest.TestCase):
         self.assertIn('pywebview==6.2.1', (PROJECT / 'requirements-window.txt').read_text())
 
     def test_server_only_mode_serves_the_page(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            home = Path(scratch) / 'new'
-            child = subprocess.Popen([sys.executable, 'window.py', '--demo', '--no-window'], cwd=PROJECT,
-                                     stdout=subprocess.PIPE, text=True,
-                                     env={**os.environ, 'DORIEPLAY_HOME': str(home), 'DORIEPLAY_SONGBASE': ''})
-            self.addCleanup(child.stdout.close)
-            self.addCleanup(child.wait, timeout=10)
-            self.addCleanup(child.terminate)
-            line = []
-            reader = threading.Thread(target=lambda: line.append(child.stdout.readline()), daemon=True)
-            reader.start()
-            reader.join(30)
-            self.assertTrue(line and line[0].startswith('http://127.0.0.1:'), line)
-            page = urllib.request.urlopen(line[0].strip(), timeout=10).read().decode()
-            self.assertIn('name="dorie-token"', page)
-            self.assertNotIn('__TOKEN__', page)
-            self.assertTrue(home.is_dir())
-            if os.name != 'nt':   # Windows has no such modes
-                self.assertEqual(home.stat().st_mode & 0o777, 0o700)
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)   # runs after the child has stopped (cleanups run last-in, first-out)
+        home = Path(scratch.name) / 'new'
+        child = subprocess.Popen([sys.executable, 'window.py', '--demo', '--no-window'], cwd=PROJECT,
+                                 stdout=subprocess.PIPE, text=True,
+                                 env={**os.environ, 'DORIEPLAY_HOME': str(home), 'DORIEPLAY_SONGBASE': ''})
+        self.addCleanup(child.stdout.close)
+        self.addCleanup(child.wait, timeout=10)
+        self.addCleanup(child.terminate)
+        line = []
+        reader = threading.Thread(target=lambda: line.append(child.stdout.readline()), daemon=True)
+        reader.start()
+        reader.join(30)
+        self.assertTrue(line and line[0].startswith('http://127.0.0.1:'), line)
+        page = urllib.request.urlopen(line[0].strip(), timeout=10).read().decode()
+        self.assertIn('name="dorie-token"', page)
+        self.assertNotIn('__TOKEN__', page)
+        self.assertTrue(home.is_dir())
+        if os.name != 'nt':   # Windows has no such modes
+            self.assertEqual(home.stat().st_mode & 0o777, 0o700)
 
 
 if __name__ == '__main__':

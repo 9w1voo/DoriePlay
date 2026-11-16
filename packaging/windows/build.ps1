@@ -3,6 +3,7 @@
 # Windows SDK (makeappx.exe):
 #   powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
 $ErrorActionPreference = 'Stop'
+Set-Location (Join-Path $PSScriptRoot '..\..')   # the project folder, wherever it is started from
 $env:PYTHONUTF8 = '1'
 python -m PyInstaller packaging\dorieplay.spec --noconfirm --distpath dist --workpath build
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
