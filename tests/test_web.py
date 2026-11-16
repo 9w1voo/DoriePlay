@@ -65,6 +65,16 @@ class Links(unittest.TestCase):
         html = (WEB / 'index.html').read_text(encoding='utf-8')
         self.assertEqual(re.findall(r'<a [^>]*href="(?!#)', html), [])
 
+    def test_the_spotify_logo_has_a_name_in_both_looks(self):
+        page = (WEB / 'app.js').read_text(encoding='utf-8')
+        body = re.search(r'const spotifyMark = .*?\n(?=const )', page, re.S).group(0)
+        self.assertEqual(body.count("alt: 'Spotify'"), 2, body)
+        self.assertNotIn("alt: ''", body)
+
+    def test_the_soundcloud_header_link_is_written_out_for_the_links_test(self):
+        page = (WEB / 'app.js').read_text(encoding='utf-8')
+        self.assertIn("el('a', { class: 'sc-mark', href: 'https://soundcloud.com'", page)
+
 
 if __name__ == '__main__':
     unittest.main()

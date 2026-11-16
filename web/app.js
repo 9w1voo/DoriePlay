@@ -292,10 +292,12 @@ const SETUP = {
 // SoundCloud: the white logo on its black badge. YouTube has no mark: its minimum height does not fit a label.
 const spotifyMark = () => el('span', { class: 'sp-mark' },
   el('img', { class: 'sp-white', src: '/spotify-white.svg', alt: 'Spotify' }),
-  el('img', { class: 'sp-black', src: '/spotify-black.svg', alt: '' }));
-const soundcloudMark = link => el(link ? 'a' : 'span', { class: 'sc-mark',
-  ...(link ? { href: 'https://soundcloud.com', target: '_blank', rel: 'noopener noreferrer' } : {}) },
-  el('img', { src: '/soundcloud.png', alt: t('scLogo') }));
+  el('img', { class: 'sp-black', src: '/spotify-black.svg', alt: 'Spotify' }));
+const soundcloudMark = link => {
+  const img = el('img', { src: '/soundcloud.png', alt: t('scLogo') });
+  return link ? el('a', { class: 'sc-mark', href: 'https://soundcloud.com', target: '_blank', rel: 'noopener noreferrer' }, img)
+    : el('span', { class: 'sc-mark' }, img);
+};
 const service = name => name === 'spotify' ? spotifyMark() : label(name);
 const redrawHome = () => document.getElementById('view').replaceChildren(home());
 const GUIDE = 'https://github.com/9w1voo/DoriePlay#connecting-the-services';
@@ -341,12 +343,13 @@ function connectionsSection() {
       p.no_key ? (p.signed_in && !S.state.demo
         ? [el('button', { class: 'btn ghost small conn-setup', type: 'button', text: t('signOut'),
             async onclick() {
+              this.disabled = true;   // one request: a second click would sign out twice
               try {
                 const r = await api('signout/' + p.name, {});
                 S.state = await api('state');
                 redrawHome();
                 toast(r.revoked ? t('signedOut') : t('signedOutLocal'));
-              } catch (error) { toast(error.message, true); }
+              } catch (error) { this.disabled = false; toast(error.message, true); }
             } }),
            el('p', { class: 'hint conn-hint', text: t('signOutHint') })]
         : el('p', { class: 'hint conn-hint', text: t('scNoKey') }))
@@ -474,7 +477,8 @@ function musicCard(ids, gone) {
       gone && el('p', { class: 'hint', text: gone.length ? t('ytmGone', { count: gone.length }) : t('ytmAllOk') })),
     gone && gone.length > 0 && el('ul', { class: 'ytm-gone' }, gone.map(({ index }) => el('li', {},
       el('button', { class: 'link', type: 'button', onclick: () => openRow(index),
-        text: `${index + 1}. ${S.plan.tracks[index].title || t('scTrack')} — ${(S.plan.tracks[index].artists || []).join(', ')}` })))),
+        text: `${index + 1}. ` + [S.plan.tracks[index].title || (S.plan.from === 'soundcloud' ? t('scTrack') : ''),
+          (S.plan.tracks[index].artists || []).join(', ')].filter(Boolean).join(' — ') })))),
     el('div', { class: 'ytm-parts' }, parts.map((part, n) => el('a', { class: 'btn ghost', target: '_blank',
       rel: 'noopener noreferrer', href: 'https://www.youtube.com/watch_videos?video_ids=' + part.join(','),
       text: t('ytmPart', { n: n + 1, from: n * PART + 1, to: n * PART + part.length }) }))),
@@ -495,7 +499,7 @@ function candidateRow(index, track, candidate) {
       // YouTube refuses to play (error 153) without a referrer; only our origin is sent, never the path.
       referrerpolicy: 'strict-origin-when-cross-origin', sandbox: 'allow-scripts allow-same-origin allow-presentation' }));
   }
-  const bare = !candidate.title;   // a clean transfer to SoundCloud kept only the id: no name, author, length or score
+  const bare = !candidate.title && S.plan.to === 'soundcloud';   // a clean transfer to SoundCloud kept only the id: no name, author, length or score
   return el('li', { class: 'cand' + (chosen ? ' chosen' : ''), 'data-key': key },
     !bare && el('span', { class: 'score', title: t('scoreTitle'), text: Math.round((candidate.score || 0) * 100) + '%' }),
     el('span', { class: 'cand-text' },
@@ -520,7 +524,7 @@ function trackRow(track, index) {
   const match = (track.candidates || []).find(c => c.id === track.match_id);
   const right = status === 'none' ? el('span', { class: 'dst empty', text: t('nothingFound') })
     : status === 'skip' ? el('span', { class: 'dst empty', text: t('notTransferred') })
-    : match && !match.title ? el('span', { class: 'dst' }, el('b', { text: t('scTrack') }))
+    : match && !match.title && S.plan.to === 'soundcloud' ? el('span', { class: 'dst' }, el('b', { text: t('scTrack') }))
     : match ? el('span', { class: 'dst' }, el('b', { text: match.title }),
         el('i', { text: `${match.artist} · ${clock(match.seconds || 0)}` + (match.source === 'discogs' ? ` · ${t('fromDiscogs')}` : '') }))
     : el('span', { class: 'dst empty', text: t('noCandidate') });

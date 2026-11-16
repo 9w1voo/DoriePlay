@@ -34,7 +34,6 @@ STATIC = {'/': ('index.html', 'text/html'), '/app.css': ('app.css', 'text/css'),
           '/logo.svg': ('logo.svg', 'image/svg+xml'), '/soundcloud.png': ('soundcloud.png', 'image/png'),
           '/spotify-white.svg': ('spotify-white.svg', 'image/svg+xml'),
           '/spotify-black.svg': ('spotify-black.svg', 'image/svg+xml')}
-IMAGES = ('image/png', 'image/svg+xml')   # served as bytes, exactly as stored
 PLAN_NAME = re.compile(r'[A-Za-z0-9_-]{1,60}')
 YOUTUBE_SEARCHES_PER_DAY = 100
 # Any web page can send requests to 127.0.0.1, and this server can change the user's playlists:
@@ -382,7 +381,7 @@ def make_handler(app, port):
         def reply(self, status, body, kind='application/json'):
             data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode()
             self.send_response(status)
-            self.send_header('Content-Type', kind if kind in IMAGES else f'{kind}; charset=utf-8')
+            self.send_header('Content-Type', kind if kind.startswith('image/') else f'{kind}; charset=utf-8')
             self.send_header('Content-Length', str(len(data)))
             for header, value in SECURITY_HEADERS.items():
                 self.send_header(header, value)
@@ -397,7 +396,7 @@ def make_handler(app, port):
                 if method == 'GET' and path in STATIC:
                     file, kind = STATIC[path]
                     page = (WEB / file).read_bytes()
-                    if kind not in IMAGES:
+                    if not kind.startswith('image/'):   # images are bytes, exactly as stored
                         page = page.replace(b'__TOKEN__', app.token.encode())
                     return self.reply(200, page, kind)
                 if not path.startswith('/api/'):

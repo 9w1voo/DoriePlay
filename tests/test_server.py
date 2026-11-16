@@ -104,6 +104,15 @@ class Security(ServerCase):
                 self.assertEqual(response.headers['Content-Type'], kind, path)
                 self.assertEqual(response.read(), (server.WEB / path).read_bytes(), path)
 
+    def test_images_are_never_touched_by_the_token_substitution(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'x.png').write_bytes(b'x__TOKEN__y')
+            with mock.patch.object(server, 'WEB', Path(folder)), \
+                    mock.patch.dict(server.STATIC, {'/x.png': ('x.png', 'image/png')}):
+                with urllib.request.urlopen(f'http://127.0.0.1:{self.port}/x.png', timeout=10) as response:
+                    self.assertEqual(response.read(), b'x__TOKEN__y')
+                    self.assertNotIn('charset', response.headers['Content-Type'])
+
     def test_other_host_names_are_refused(self):
         self.assertEqual(self.call('/api/state', host='evil.example')[0], 403)
         self.assertEqual(self.call('/', token=False, host=f'evil.example:{self.port}')[0], 403)
