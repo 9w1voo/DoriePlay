@@ -267,10 +267,30 @@ class Clear(Case):
         self.sc()
         platforms.PLATFORMS['fake'] = Fake()
         gone = {'source_id': 'src9', 'duration_ms': 2000, 'approved': False, 'match_id': None, 'candidates': []}
-        self.put('soundcloud', 'fake', [{**approved('aaaaaaaaaaa'), 'source_id': 'src1'}, gone])
+        trimmed = {**gone, 'source_id': 'src8', 'candidates': [{'id': 'x'}]}
+        self.put('soundcloud', 'fake', [{**approved('aaaaaaaaaaa'), 'source_id': 'src1'}, gone, trimmed])
         self.apply()
         _, out = self.quiet(dorieplay.review_plan, self.args())
         self.assertIn('src9', out)
+        self.assertIn('SoundCloud details were removed after the transfer, as SoundCloud’s rules require.', out)
+        self.assertNotIn('nothing found', out)
+        self.assertNotIn('None', out)
+        self.assertNotIn('To take a song', out)
+        self.assertIn('—', out)
+
+    def test_urls_with_spaces_and_unapproved_urls_become_ids(self):
+        fake = self.sc()
+        spaced = {**approved('https://soundcloud.com/a/c1 \n'), 'candidates': [self.candidate('c1')]}
+        pending = {**track('s2'), 'approved': False, 'match_id': 'https://soundcloud.com/a/c2',
+                   'candidates': [self.candidate('c2')]}
+        self.put('spotify', 'soundcloud', [spaced, pending])
+        self.apply()
+        found = dorieplay.load(self.plan)['tracks']
+        self.assertEqual([t['match_id'] for t in found], ['c1', 'c2'])
+        self.assertNotIn('soundcloud.com', Path(self.plan).read_text(encoding='utf-8'))
+        fake.existing, fake.added = {'c1': 1}, []
+        self.assertEqual(self.apply()['skipped'], [])
+        self.assertEqual(fake.added, [])
 
     def test_a_cleared_plan_is_not_resumed_without_force(self):
         source = types.SimpleNamespace(NAME='spotify', LABEL='Spotify',

@@ -93,12 +93,12 @@ def clear_soundcloud(plan):
     """After a clean transfer a plan that involves SoundCloud keeps ids only (changes and returns the plan)."""
     if plan.get('to') == 'soundcloud':
         for track in plan['tracks']:
+            value = str(track.get('match_id') or '').strip()
+            for candidate in track.get('candidates') or []:
+                if value and value in (candidate.get('id'), candidate.get('url')):
+                    track['match_id'] = candidate['id']
+                    break
             keep = bool(track.get('approved') and track.get('match_id'))
-            if keep:
-                for candidate in track.get('candidates') or []:
-                    if track['match_id'] == candidate.get('url'):
-                        track['match_id'] = candidate['id']
-                        break
             track['candidates'] = [{'id': track['match_id']}] if keep else []
     if plan.get('from') == 'soundcloud':
         for track in plan['tracks']:
@@ -252,6 +252,7 @@ def make_plan(args, progress=None):
 def review_plan(args):
     plan = load(args.plan)
     pending = [(i, t) for i, t in enumerate(plan['tracks'], 1) if not t.get('approved')]
+    cleared = plan.get('soundcloud_cleared')
     print(f'{plan["name"]}: {len(plan["tracks"]) - len(pending)} approved, {len(pending)} need a decision.')
     for number, track in pending:
         print(f"\n#{number} {describe(track)} ({(track.get('duration_ms') or 0) // 1000}s)")
@@ -259,11 +260,14 @@ def review_plan(args):
             print(f"   source: {track['source_title']}")
         for c in track.get('candidates') or []:
             mark = '*' if c.get('id') == track.get('match_id') else ' '
-            print(f"  {mark}{c.get('score') or 0:.2f} {c.get('seconds') or '—'}s [{c.get('artist') or '—'}] "
+            score = f"{c['score']:.2f}" if c.get('score') is not None else '—'
+            print(f"  {mark}{score} {c.get('seconds') or '—'}s [{c.get('artist') or '—'}] "
                   f"{c.get('title') or '—'}\n     {c.get('url') or '—'}")
-        if not track.get('candidates'):
+        if not track.get('candidates') and not cleared:
             print('   nothing found')
-    if pending:
+    if cleared and pending:
+        print('\nSoundCloud details were removed after the transfer, as SoundCloud’s rules require.')
+    elif pending:
         print('\nTo take a song: in the plan file set its "match_id" to the chosen id and "approved" to true.')
 
 
