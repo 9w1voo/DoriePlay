@@ -192,6 +192,21 @@ function drawLanguages() {   // small flags; the language's own name is the butt
 
 // --- Home ------------------------------------------------------------------------------------------
 
+// The song field is as tall as its text, wrapped lines included (a long link takes two lines on a phone),
+// up to 8 lines; then it scrolls. The 1 px allows for rounding of the line height.
+function fitField(area) {
+  if (!area.isConnected) return;
+  const top = area.scrollTop;   // shrinking to 1 line to measure would otherwise move a long list
+  area.rows = 1;
+  while (area.rows < 8 && area.scrollHeight > area.clientHeight + 1) area.rows += 1;
+  area.scrollTop = top;
+  area.classList.toggle('multi', area.rows > 1);
+}
+addEventListener('resize', () => {   // a turned phone or a resized window wraps the text differently
+  const area = document.querySelector('textarea.link-input');
+  if (area) fitField(area);
+});
+
 function home() {
   // A textarea, so a list of songs keeps its lines; it grows with the list.
   const input = el('textarea', { class: 'link-input', rows: 1, autocomplete: 'off', spellcheck: 'false',
@@ -218,8 +233,7 @@ function home() {
 
   function drawTargets() {
     S.link = input.value;   // kept when the page is redrawn (set-up panel, language)
-    input.rows = Math.min(8, input.value.split('\n').length);
-    input.classList.toggle('multi', input.rows > 1);
+    fitField(input);
     const source = sourceOf(input.value.trim());
     const allowed = S.state.platforms.filter(p => p.name !== source);
     if (!S.target || S.target === source) S.target = source ? allowed[0].name : null;
@@ -271,6 +285,7 @@ function home() {
       form),
     plansSection(), connectionsSection());
   drawTargets();
+  requestAnimationFrame(() => fitField(input));   // measured once the page shows it
   return view;
 }
 
