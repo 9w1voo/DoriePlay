@@ -9,6 +9,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -53,7 +55,6 @@ class TestAmToken(unittest.TestCase):
         httpd = amtoken.serve(TEAM, KEY, key or self.p8, port=0, **options)
         self.addCleanup(httpd.server_close)
         self.addCleanup(httpd.shutdown)
-        import threading
         threading.Thread(target=httpd.serve_forever, args=(0.01,), daemon=True).start()
         return httpd.server_address[1]
 
@@ -68,11 +69,76 @@ class TestAmToken(unittest.TestCase):
     def test_der_signatures_become_64_raw_bytes(self):
         r = b'\x80' + b'\x11' * 31          # high bit set: DER adds a 00, 33 bytes
         s = b'\x22' * 31                    # short: 31 bytes
-        der = b'\x30\x40' + b'\x02\x21\x00' + r + b'\x02\x1f' + s
+        body = b'\x02\x21\x00' + r + b'\x02\x1f' + s
+        der = b'\x30\x44' + body
         raw = amtoken.der_to_raw(der)
         self.assertEqual(len(raw), 64)
         self.assertEqual(raw[:32], r)
         self.assertEqual(raw[32:], b'\0' + s)
+        bad = {
+            'outer length too small': b'\x30\x43' + body,
+            'outer length too big': b'\x30\x45' + body,
+            'integer past the end': b'\x30\x44' + body[:-33] + b'\x02\x21' + s,
+            'byte left over': b'\x30\x45' + body + b'\x00',
+            'integer of 34 bytes': b'\x30\x45' + b'\x02\x22' + b'\x00' * 34 + body[35:],
+            'empty integer': b'\x30\x24' + b'\x02\x00' + body[:35 - 3] + b'\x02\x00',
+            'not a sequence': b'\x31\x44' + body,
+            'empty': b'',
+        }
+        for name, der in bad.items():
+            with self.subTest(name), self.assertRaises(ValueError):
+                amtoken.der_to_raw(der)
+
+    def test_a_failed_renewal_keeps_the_old_token_while_it_lasts(self):
+        t0 = 1_000_000
+        real, calls = amtoken.mint, []
+
+        def mint(*args):
+            calls.append(args[-1])
+            if len(calls) == 1:
+                return real(*args)
+            raise subprocess.CalledProcessError(1, 'openssl')
+
+        with mock.patch.object(amtoken.time, 'time') as clock, mock.patch.object(amtoken, 'mint', mint):
+            clock.return_value = t0
+            port = self.start()
+            first = self.call(port)[1]
+            clock.return_value = t0 + 21601
+            self.assertEqual(self.call(port)[1], first)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(self.call(port)[1], first)       # same second: no new attempt
+            self.assertEqual(len(calls), 2)
+            clock.return_value = t0 + 21601 + amtoken.RETRY
+            self.assertEqual(self.call(port)[1], first)
+            self.assertEqual(len(calls), 3)
+            clock.return_value = t0 + 43200 - amtoken.MARGIN
+            status, body, _ = self.call(port)
+            self.assertEqual((status, body), (503, {'error': 'token_unavailable'}))
+
+    def test_a_slow_signature_does_not_hold_up_the_limit(self):
+        release, started = threading.Event(), threading.Event()
+        real = amtoken.mint
+
+        def mint(*args):
+            started.set()
+            release.wait(10)
+            return real(*args)
+
+        with mock.patch.object(amtoken, 'mint', mint):
+            port = self.start(per_address=1)
+            first = []
+            worker = threading.Thread(
+                target=lambda: first.append(self.call(port, headers={'X-Forwarded-For': '1.1.1.1'})[0]))
+            worker.start()
+            self.addCleanup(release.set)
+            self.assertTrue(started.wait(5))
+            began = time.monotonic()
+            status, body, _ = self.call(port, headers={'X-Forwarded-For': '1.1.1.1'})
+            self.assertEqual((status, body), (429, {'error': 'token_limit'}))
+            self.assertLess(time.monotonic() - began, 2)
+            release.set()
+            worker.join(10)
+            self.assertEqual(first, [200])
 
     def test_a_minted_token_is_a_valid_es256_jwt(self):
         token, exp = amtoken.mint(TEAM, KEY, self.p8, now=1_000_000)

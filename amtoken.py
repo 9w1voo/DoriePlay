@@ -24,6 +24,8 @@ PATH = '/v1/applemusic/token'
 PORT = 8773
 LIFETIME = 43200        # seconds a token lives (12 h)
 RENEW = 21600           # a new one is made when less than this is left (6 h)
+MARGIN = 600            # an old token is still handed out after a failed renewal while it has more than this left
+RETRY = 60              # seconds between signing attempts after a failure
 PER_ADDRESS = 60        # requests per hour from one address (IPv6: one /64 network)
 TABLE = 50000           # addresses remembered at once
 CONNECTIONS = 32        # open connections at once
@@ -35,18 +37,22 @@ def b64(data):
 
 
 def der_to_raw(der):
-    """openssl's DER signature (SEQUENCE of two INTEGERs) -> 64 bytes r||s, as JWT ES256 wants."""
-    def integer(at):
-        if der[at] != 2:
-            raise ValueError
-        size = der[at + 1]
-        return int.from_bytes(der[at + 2:at + 2 + size], 'big'), at + 2 + size
-
-    if der[0] != 0x30:
-        raise ValueError
-    r, at = integer(2)
-    s, _ = integer(at)
-    return r.to_bytes(32, 'big') + s.to_bytes(32, 'big')
+    """openssl's DER signature (SEQUENCE of two INTEGERs) -> 64 bytes r||s, as JWT ES256 wants.
+    Raises ValueError when the bytes are not exactly that."""
+    if len(der) < 8 or der[0] != 0x30 or der[1] != len(der) - 2 or der[1] > 0x7f:
+        raise ValueError('bad signature')
+    parts, at = [], 2
+    for _ in range(2):
+        if at + 2 > len(der) or der[at] != 2 or not 1 <= der[at + 1] <= 33 or at + 2 + der[at + 1] > len(der):
+            raise ValueError('bad signature')
+        parts.append(int.from_bytes(der[at + 2:at + 2 + der[at + 1]], 'big'))
+        at += 2 + der[at + 1]
+    if at != len(der):
+        raise ValueError('bad signature')
+    try:
+        return b''.join(part.to_bytes(32, 'big') for part in parts)
+    except OverflowError:
+        raise ValueError('bad signature') from None
 
 
 def mint(team_id, key_id, key_path, now):
@@ -65,7 +71,8 @@ def serve(team_id, key_id, key_path, port=PORT, host='127.0.0.1', per_address=PE
     """The server, not yet started. The limit window is one hour (fixed: a burst at its edge can reach 2x)."""
     lock = threading.Lock()
     counts, window = {}, [time.monotonic()]
-    current = [None, 0]     # the token everyone gets, and its exp
+    signing = threading.Lock()   # its own lock: a slow openssl must not stall the counting
+    current = [None, 0, 0]       # the token everyone gets, its exp, and when signing may be tried again
     open_connections = threading.BoundedSemaphore(connections)
 
     def count(key):
@@ -80,16 +87,17 @@ def serve(team_id, key_id, key_path, port=PORT, host='127.0.0.1', per_address=PE
             return counts[key] <= per_address
 
     def token():
-        """(token, exp), or None when signing fails. Made under the lock: concurrent callers mint once."""
-        with lock:
+        """(token, exp), or None when there is none to give. Signs under its own lock: concurrent callers sign once."""
+        with signing:
             now = int(time.time())
-            if current[0] is None or current[1] - now < RENEW:
+            if (current[0] is None or current[1] - now < RENEW) and now >= current[2]:
                 try:
                     current[0], current[1] = mint(team_id, key_id, key_path, now)
                 except Exception:   # noqa: BLE001  nothing about the failure leaves this function
-                    current[0], current[1] = None, 0
-                    return None
-            return current[0], current[1]
+                    current[2] = now + RETRY
+            if current[0] is not None and current[1] - now > MARGIN:
+                return current[0], current[1]
+            return None
 
     class Server(ThreadingHTTPServer):
         daemon_threads = True
