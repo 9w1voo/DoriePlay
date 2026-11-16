@@ -96,6 +96,14 @@ class Security(ServerCase):
         self.assertEqual(self.call('/api/plans', {'url': LINK}, token=False)[0], 403)
         self.assertEqual(self.app.summaries(), [])
 
+    def test_the_service_marks_are_served_as_is(self):
+        for path, kind in (('soundcloud.png', 'image/png'), ('spotify-white.svg', 'image/svg+xml'),
+                           ('spotify-black.svg', 'image/svg+xml'), ('logo.svg', 'image/svg+xml')):
+            with urllib.request.urlopen(f'http://127.0.0.1:{self.port}/{path}', timeout=10) as response:
+                self.assertEqual(response.status, 200, path)
+                self.assertEqual(response.headers['Content-Type'], kind, path)
+                self.assertEqual(response.read(), (server.WEB / path).read_bytes(), path)
+
     def test_other_host_names_are_refused(self):
         self.assertEqual(self.call('/api/state', host='evil.example')[0], 403)
         self.assertEqual(self.call('/', token=False, host=f'evil.example:{self.port}')[0], 403)

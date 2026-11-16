@@ -272,3 +272,14 @@ button.stat:hover { transform: translateY(-1px); }
   .stat span { font-size: 0.78rem; line-height: 1.25; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Official service marks: only beside the service's own name or data. */
+.sc-mark { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 6px; background: #121212; justify-self: start; }
+.sc-mark img { display: block; width: 90px; height: auto; }
+.sp-mark { display: inline-flex; align-items: center; padding: 6px; }
+.sp-mark img { display: block; width: 84px; height: auto; }
+[data-theme="glass"] .sp-black, [data-theme="glass-light"] .sp-white { display: none; }
+.conn-hint { flex-basis: 100%; margin: 0; }
+.setup-steps a { overflow-wrap: anywhere; }
+.route .sp-mark { vertical-align: middle; padding: 3px; }
+.setup-steps a { color: var(--accent); }

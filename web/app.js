@@ -149,7 +149,9 @@ function musicLink(text) {
 function statusOf(track) {
   if (track.approved && track.match_id) return track.decided ? 'ok' : 'auto';
   if (track.decided) return 'skip';
-  return (track.candidates || []).length ? 'ask' : 'none';
+  if ((track.candidates || []).length) return 'ask';
+  // after a clean transfer to SoundCloud an unapproved song keeps nothing to choose from: it was left out
+  return S.plan && S.plan.cleared && S.plan.to === 'soundcloud' ? 'skip' : 'none';
 }
 const FILTERS = [['ask', 'fAsk', ['ask']], ['all', 'fAll', ['auto', 'ok', 'ask', 'skip', 'none']],
                  ['in', 'fIn', ['auto', 'ok']], ['out', 'fOut', ['skip', 'none']]];
@@ -278,28 +280,35 @@ function plansSection() {
 /* Set-up help for each service: where to get the key (official pages only) and how it is pasted.
    Keys go to the program on this computer and are saved in its data folder; the page never shows them again. */
 const SETUP = {
-  spotify: { site: 'https://developer.spotify.com/dashboard', steps: () => [t('setSp1'), t('setSp2'), t('setSp3')] },
-  youtube: { site: 'https://console.cloud.google.com/', steps: () => [t('setYt1'), t('setYt2'), t('setYt3')] },
-  soundcloud: { site: 'https://soundcloud.com/you/apps', steps: () => [t('setSc1'), t('setSc2')] },
+  spotify: { intro: () => t('setSp0'), steps: () => [{ text: t('setSp1'), href: 'https://developer.spotify.com/dashboard' },
+    { text: t('setSp2') }, { text: t('setSp3') }] },
+  youtube: { intro: () => t('setYt0'), steps: () => [
+    { text: t('setYt1'), href: 'https://console.cloud.google.com/apis/library/youtube.googleapis.com' },
+    { text: t('setYt2'), href: 'https://console.cloud.google.com/auth/overview' },
+    { text: t('setYt3'), href: 'https://console.cloud.google.com/auth/clients' }] },
 };
+// Official marks, shown only next to the service's own name or data (never as Dorie Play branding).
+// Spotify: the full logo, white on the dark look and black on the light one (the CSS hides the other).
+// SoundCloud: the white logo on its black badge. YouTube has no mark: its minimum height does not fit a label.
+const spotifyMark = () => el('span', { class: 'sp-mark' },
+  el('img', { class: 'sp-white', src: '/spotify-white.svg', alt: 'Spotify' }),
+  el('img', { class: 'sp-black', src: '/spotify-black.svg', alt: '' }));
+const soundcloudMark = link => el(link ? 'a' : 'span', { class: 'sc-mark',
+  ...(link ? { href: 'https://soundcloud.com', target: '_blank', rel: 'noopener noreferrer' } : {}) },
+  el('img', { src: '/soundcloud.png', alt: t('scLogo') }));
+const service = name => name === 'spotify' ? spotifyMark() : label(name);
 const redrawHome = () => document.getElementById('view').replaceChildren(home());
 const GUIDE = 'https://github.com/9w1voo/DoriePlay#connecting-the-services';
 const RELEASES = 'https://github.com/9w1voo/DoriePlay/releases/latest';
 
 function setupPanel(p) {
-  const fields = p.name === 'soundcloud'
-    ? [el('input', { class: 'link-input', autocomplete: 'off', placeholder: t('scId'), 'aria-label': t('scId') }),
-       el('input', { class: 'link-input', type: 'password', autocomplete: 'off', placeholder: t('scSecret'),
-         'aria-label': t('scSecret') })]
-    : p.name === 'youtube'
-      ? [el('textarea', { class: 'key-text', rows: 4, spellcheck: 'false', placeholder: t('ytPaste'), 'aria-label': t('ytPaste') })]
-      : [el('input', { class: 'link-input', autocomplete: 'off', placeholder: t('spPaste'), 'aria-label': t('spPaste') })];
+  const fields = p.name === 'youtube'
+    ? [el('textarea', { class: 'key-text', rows: 4, spellcheck: 'false', placeholder: t('ytPaste'), 'aria-label': t('ytPaste') })]
+    : [el('input', { class: 'link-input', autocomplete: 'off', placeholder: t('spPaste'), 'aria-label': t('spPaste') })];
   const replace = p.key && el('input', { type: 'checkbox' });
   async function save() {
-    const value = p.name === 'soundcloud'
-      ? JSON.stringify({ client_id: fields[0].value.trim(), client_secret: fields[1].value.trim() }) : fields[0].value;
     try {
-      await api('keys/' + p.name, { value, replace: Boolean(replace && replace.checked) });
+      await api('keys/' + p.name, { value: fields[0].value, replace: Boolean(replace && replace.checked) });
       fields.forEach(field => { field.value = ''; });
       S.setup = null;
       S.state = await api('state');
@@ -309,9 +318,10 @@ function setupPanel(p) {
   }
   const setup = SETUP[p.name];
   return el('div', { class: 'setup' },
-    el('ol', { class: 'setup-steps' }, setup.steps().map(text => el('li', { text }))),
-    el('p', { class: 'hint' }, el('a', { href: setup.site, target: '_blank', rel: 'noopener noreferrer', text: setup.site }),
-      ' · ', el('a', { href: GUIDE, target: '_blank', rel: 'noopener noreferrer', text: t('setGuide') })),
+    el('p', { class: 'hint', text: setup.intro() }),
+    el('ol', { class: 'setup-steps' }, setup.steps().map(({ text, href }) => el('li', {}, text,
+      href && el('br'), href && el('a', { href, target: '_blank', rel: 'noopener noreferrer', text: href })))),
+    el('p', { class: 'hint' }, el('a', { href: GUIDE, target: '_blank', rel: 'noopener noreferrer', text: t('setGuide') })),
     fields,
     replace && el('label', { class: 'setup-replace' }, replace, ' ', t('setReplace')),
     el('div', { class: 'setup-actions' },
@@ -323,13 +333,27 @@ function connectionsSection() {
   const left = S.state.youtube_searches_left;
   return el('section', { class: 'block' }, el('h2', { text: t('services') }),
     el('div', { class: 'conn-list' }, S.state.platforms.map(p => el('div', { class: 'conn' },
-      el('span', { class: 'conn-name', text: p.label }),
-      el('span', { class: 'dot ' + (p.key ? 'on' : 'off'), text: p.key ? t('keyYes') : t('keyNo') }),
+      el('span', { class: 'conn-name' }, p.name === 'spotify' ? spotifyMark() : p.name === 'soundcloud' ? soundcloudMark()
+        : p.label),
+      p.no_key ? el('span', { class: 'dot on', text: t('keyNotNeeded') })
+        : el('span', { class: 'dot ' + (p.key ? 'on' : 'off'), text: p.key ? t('keyYes') : t('keyNo') }),
       el('span', { class: 'dot ' + (p.signed_in ? 'on' : 'idle'), text: p.signed_in ? t('signedYes') : t('signedLater') }),
-      el('button', { class: 'btn ghost small conn-setup', type: 'button', 'aria-expanded': String(S.setup === p.name),
+      p.no_key ? (p.signed_in && !S.state.demo
+        ? [el('button', { class: 'btn ghost small conn-setup', type: 'button', text: t('signOut'),
+            async onclick() {
+              try {
+                const r = await api('signout/' + p.name, {});
+                S.state = await api('state');
+                redrawHome();
+                toast(r.revoked ? t('signedOut') : t('signedOutLocal'));
+              } catch (error) { toast(error.message, true); }
+            } }),
+           el('p', { class: 'hint conn-hint', text: t('signOutHint') })]
+        : el('p', { class: 'hint conn-hint', text: t('scNoKey') }))
+      : el('button', { class: 'btn ghost small conn-setup', type: 'button', 'aria-expanded': String(S.setup === p.name),
         text: p.key ? t('setChange') : t('setUp'),
         onclick() { S.setup = S.setup === p.name ? null : p.name; redrawHome(); } }),
-      S.setup === p.name && setupPanel(p)))),
+      S.setup === p.name && !p.no_key && setupPanel(p)))),
     songbaseRow(),
     el('p', { class: 'hint', text: t('ytLeft', { left }) }));
 }
@@ -450,7 +474,7 @@ function musicCard(ids, gone) {
       gone && el('p', { class: 'hint', text: gone.length ? t('ytmGone', { count: gone.length }) : t('ytmAllOk') })),
     gone && gone.length > 0 && el('ul', { class: 'ytm-gone' }, gone.map(({ index }) => el('li', {},
       el('button', { class: 'link', type: 'button', onclick: () => openRow(index),
-        text: `${index + 1}. ${S.plan.tracks[index].title || '—'} — ${(S.plan.tracks[index].artists || []).join(', ')}` })))),
+        text: `${index + 1}. ${S.plan.tracks[index].title || t('scTrack')} — ${(S.plan.tracks[index].artists || []).join(', ')}` })))),
     el('div', { class: 'ytm-parts' }, parts.map((part, n) => el('a', { class: 'btn ghost', target: '_blank',
       rel: 'noopener noreferrer', href: 'https://www.youtube.com/watch_videos?video_ids=' + part.join(','),
       text: t('ytmPart', { n: n + 1, from: n * PART + 1, to: n * PART + part.length }) }))),
@@ -471,17 +495,20 @@ function candidateRow(index, track, candidate) {
       // YouTube refuses to play (error 153) without a referrer; only our origin is sent, never the path.
       referrerpolicy: 'strict-origin-when-cross-origin', sandbox: 'allow-scripts allow-same-origin allow-presentation' }));
   }
+  const bare = !candidate.title;   // a clean transfer to SoundCloud kept only the id: no name, author, length or score
   return el('li', { class: 'cand' + (chosen ? ' chosen' : ''), 'data-key': key },
-    el('span', { class: 'score', title: t('scoreTitle'), text: Math.round((candidate.score || 0) * 100) + '%' }),
+    !bare && el('span', { class: 'score', title: t('scoreTitle'), text: Math.round((candidate.score || 0) * 100) + '%' }),
     el('span', { class: 'cand-text' },
-      el('b', { text: candidate.title || '—' }),
-      el('i', { text: `${candidate.artist || '—'} · ${clock(candidate.seconds || 0)}` +
+      el('b', { text: bare ? t('scTrack') : candidate.title }),
+      !bare && el('i', { text: `${candidate.artist || '—'} · ${clock(candidate.seconds || 0)}` +
         (delta ? ` (${delta > 0 ? '+' : '−'}${Math.abs(delta)} ${t('sec')})` : '') +
-        (candidate.source === 'discogs' ? ` · ${t('fromDiscogs')}` : '') })),
+        (candidate.source === 'discogs' ? ` · ${t('fromDiscogs')}` : '') +
+        (platform === 'soundcloud' && candidate.uploader ? ` · ${t('scUploader', { name: candidate.uploader })}` : '') })),
     el('span', { class: 'cand-actions' },
       frameUrl && el('button', { class: 'btn ghost', type: 'button', text: S.playing.get(index) === candidate.id ? t('hide') : t('listen'),
         onclick() { S.playing.get(index) === candidate.id ? S.playing.delete(index) : S.playing.set(index, candidate.id); drawPlan(); } }),
-      link && el('a', { class: 'btn ghost', href: link, target: '_blank', rel: 'noopener noreferrer', text: t('open') }),
+      link && el('a', { class: 'btn ghost', href: link, target: '_blank', rel: 'noopener noreferrer',
+        text: platform === 'soundcloud' ? t('openSc') : t('open') }),
       chosen ? el('span', { class: 'picked', text: t('chosen') })
              : el('button', { class: 'btn small', type: 'button', text: t('takeThis'), onclick: () => decide(index, true, candidate.id) })),
     slot);
@@ -493,22 +520,28 @@ function trackRow(track, index) {
   const match = (track.candidates || []).find(c => c.id === track.match_id);
   const right = status === 'none' ? el('span', { class: 'dst empty', text: t('nothingFound') })
     : status === 'skip' ? el('span', { class: 'dst empty', text: t('notTransferred') })
+    : match && !match.title ? el('span', { class: 'dst' }, el('b', { text: t('scTrack') }))
     : match ? el('span', { class: 'dst' }, el('b', { text: match.title }),
         el('i', { text: `${match.artist} · ${clock(match.seconds || 0)}` + (match.source === 'discogs' ? ` · ${t('fromDiscogs')}` : '') }))
     : el('span', { class: 'dst empty', text: t('noCandidate') });
+  // a cleared SoundCloud song has no name and no artists: show only what is left, never "— · 0:00"
+  const info = [(track.artists || []).join(', '), track.duration_ms ? clock(track.duration_ms / 1000) : ''].filter(Boolean).join(' · ');
   const head = el('button', { class: 'row-main', type: 'button', 'aria-expanded': String(open), onclick() {
     open ? S.open.delete(index) : S.open.add(index); drawPlan();
   } },
     el('span', { class: 'num', text: String(index + 1).padStart(2, '0') }),
-    el('span', { class: 'src' }, el('b', { text: track.title || '—' }),
-      el('i', { text: `${(track.artists || []).join(', ') || '—'}` + (track.duration_ms ? ` · ${clock(track.duration_ms / 1000)}` : '') })),
+    el('span', { class: 'src' }, el('b', { text: track.title || (S.plan.from === 'soundcloud' ? t('scTrack') : '—') }),
+      (track.title || info) && el('i', { text: info || '—' })),
     el('span', { class: 'arrow', 'aria-hidden': 'true', text: '→' }), right,
     el('span', { class: 'badge', text: t(STATUS_TEXT[status]) }));
   const details = open && el('div', { class: 'cands' },
     track.source_title && el('p', { class: 'hint', text: t('originalTitle', { title: track.source_title }) }),
+    track.uploader && el('p', { class: 'hint', text: t('scUploader', { name: track.uploader }) }),
+    safeLink(track.source_url) && el('p', { class: 'hint' }, el('a', { href: safeLink(track.source_url), target: '_blank',
+      rel: 'noopener noreferrer', text: t('openSc') })),
     (track.candidates || []).length
       ? el('ul', {}, track.candidates.map(candidate => candidateRow(index, track, candidate)))
-      : el('p', { class: 'hint', text: t('searchEmpty') }),
+      : el('p', { class: 'hint', text: S.plan.cleared && S.plan.to === 'soundcloud' ? t('scCleared') : t('searchEmpty') }),
     el('div', { class: 'cands-foot' },
       status !== 'skip' && status !== 'none' && el('button', { class: 'btn ghost', type: 'button', text: t('dontTransfer'),
         onclick: () => decide(index, false, null) })));
@@ -573,7 +606,9 @@ function drawPlan() {
   view.replaceChildren(el('div', { class: 'plan' }, back,
     el('header', { class: 'plan-head' },
       el('h1', { text: S.plan.title || S.plan.name }),
-      el('p', { class: 'route', text: `${label(S.plan.from)} → ${label(S.plan.to)} · ${songs(tracks.length)}` })),
+      el('p', { class: 'route' }, service(S.plan.from), ' → ', service(S.plan.to), ` · ${songs(tracks.length)}`),
+      (S.plan.from === 'soundcloud' || S.plan.to === 'soundcloud') && soundcloudMark(true),
+      S.plan.cleared && el('p', { class: 'hint', text: t('scCleared') })),
     job && job.state === 'error' && jobCard(job),
     job && job.state === 'done' && job.kind === 'apply' && job.result && resultCard(job),
     // The three counters are the filter (Ivan kept clicking them); pressing the chosen one again shows all.
