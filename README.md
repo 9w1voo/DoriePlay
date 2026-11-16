@@ -20,13 +20,15 @@ and nothing is sent to anyone except the music services themselves.
 
 ## What you need (read this first)
 
-There is no shared server and no shared keys: you connect the services with **your own** API keys.
+Dorie Play runs on your own computer. Spotify and YouTube need **your own** free API keys; SoundCloud needs only your
+SoundCloud account. Two small Dorie Play servers help: the song base, which saves YouTube searches (you can turn it off
+under Services), and the SoundCloud sign-in server. Neither keeps logs.
 
 | Service | What you need |
 |---|---|
 | Spotify | A free developer app (Client ID). The app owner needs Spotify Premium. Only playlists you own or collaborate on can be read. |
 | YouTube | A Google Cloud project with YouTube Data API v3. About **100 searches a day**, so a long playlist going *to* YouTube takes several days (the program continues where it stopped). |
-| SoundCloud | API keys, which SoundCloud gives only to Artist Pro subscribers. |
+| SoundCloud | Nothing but your SoundCloud account: you sign in the first time you use it. |
 | Deezer | Nothing: public playlists are read without a key. Deezer is a source only, since it no longer gives out the keys needed to create playlists. |
 
 You only need keys for the two services you transfer between. Python 3.10 or newer.
@@ -98,11 +100,7 @@ export SPOTIPY_CLIENT_ID='your_client_id'
 
 While the Google app is in *Testing*, Google asks you to sign in again about once a week.
 
-**SoundCloud**
-
-1. Create an app at https://soundcloud.com/you/apps with the redirect URI
-   `http://127.0.0.1:8890/callback`.
-2. Copy `soundcloud-client.example.json` to `soundcloud-client.json` and fill in your values.
+**SoundCloud** needs no key: Dorie Play's own SoundCloud app is used, and its secret stays on the sign-in server.
 
 The first time a service is used, a sign-in page opens in your browser. Sign in on the same
 computer that runs the program.

@@ -94,23 +94,9 @@ Spotify Premium. Раз на 6 місяців Spotify попросить уві�
 
 ## Підключення SoundCloud
 
-SoundCloud видає API-ключі лише власникам підписки **Artist Pro**.
-
-1. Відкрий https://soundcloud.com/you/apps і створи застосунок (назва, опис, сайт —
-   можна посилання на свій GitHub).
-2. Redirect URI: `http://127.0.0.1:8890/callback`
-3. Створи в папці проєкту файл `soundcloud-client.json`:
-
-```json
-{
-  "client_id": "твій_client_id",
-  "client_secret": "твій_client_secret",
-  "redirect_uri": "http://127.0.0.1:8890/callback"
-}
-```
-
-Під час першого запуску відкриється вхід у SoundCloud. Токен зберігається в
-`.soundcloud-token.json` і оновлюється сам. Не публікуй ці два файли.
+Ключ не потрібен: Dorie Play має власний застосунок SoundCloud, а його секрет лежить лише на сервері входу.
+Під час першого використання відкриється вхід у SoundCloud; вхід зберігається в `.soundcloud-token.json`
+і оновлюється сам. Не публікуй цей файл.
 
 Особливості SoundCloud:
 - читаються плейлисти за посиланням `soundcloud.com/<user>/sets/<назва>`
