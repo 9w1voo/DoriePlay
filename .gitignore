@@ -19,3 +19,8 @@ design/
 *.sqlite
 *.sqlite-*
 discogs_*.xml.gz
+# MusicKit private keys live only on the server
+*.p8
+# the token service's code is not a secret, although its name matches *token*
+!amtoken.py
+!tests/test_amtoken.py
