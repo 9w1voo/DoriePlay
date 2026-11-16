@@ -64,9 +64,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: DoriePlay-windows
+          # the .msix for the Store; build/msix is the same package unpacked, to try it on a PC with Developer Mode:
+          #   Add-AppxPackage -Register build\msix\AppxManifest.xml   (an unsigned .msix cannot be opened by double-click)
           path: |
             dist/DoriePlay-*.msix
-            dist/DoriePlay/
+            build/msix/
 
   mac:
     runs-on: macos-latest   # Apple silicon: the dmg is arm64 only
