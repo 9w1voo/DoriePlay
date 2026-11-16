@@ -5,6 +5,7 @@ Run from the project folder:  python -m unittest discover tests
 import contextlib
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -103,6 +104,19 @@ class Security(ServerCase):
                 self.assertEqual(response.status, 200, path)
                 self.assertEqual(response.headers['Content-Type'], kind, path)
                 self.assertEqual(response.read(), (server.WEB / path).read_bytes(), path)
+
+    def test_every_language_has_a_flag(self):
+        source = (server.WEB / 'i18n.js').read_text(encoding='utf-8')
+        codes = re.findall(r'\n  (\w+): \{\n', source)
+        self.assertEqual(codes, ['en', 'uk', 'nl', 'ru', 'es'])
+        for code in codes:
+            path = f'flag-{code}.svg'
+            self.assertEqual(server.STATIC.get('/' + path), (path, 'image/svg+xml'), path)
+            with urllib.request.urlopen(f'http://127.0.0.1:{self.port}/{path}', timeout=10) as response:
+                self.assertEqual(response.read(), (server.WEB / path).read_bytes(), path)
+            svg = (server.WEB / path).read_text(encoding='utf-8')
+            # an image may not carry code, outside links or a style the page's CSP would drop
+            self.assertNotRegex(svg, r'<script|<style|<foreignObject|\son\w+=|href=|@import', path)
 
     def test_images_are_never_touched_by_the_token_substitution(self):
         with tempfile.TemporaryDirectory() as folder:

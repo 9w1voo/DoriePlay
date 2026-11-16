@@ -9,9 +9,8 @@ const store = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
   set(key, value) { try { localStorage.setItem(key, value); } catch { /* private window */ } },
 };
-// Before the first paint, so the page does not flash in another look. No choice yet: follow the system.
-document.documentElement.dataset.theme = THEMES.some(([id]) => id === store.get('theme')) ? store.get('theme')
-  : matchMedia('(prefers-color-scheme: light)').matches ? 'glass-light' : 'glass';
+// Before the first paint, so the page does not flash in another look. No choice yet: the dark look.
+document.documentElement.dataset.theme = THEMES.some(([id]) => id === store.get('theme')) ? store.get('theme') : 'glass';
 
 let lang = LANGS.includes(store.get('lang')) ? store.get('lang') : 'en';
 document.documentElement.lang = lang;
@@ -159,27 +158,36 @@ const STATUS_TEXT = { auto: 'sAuto', ok: 'sOk', ask: 'sAsk', skip: 'sSkip', none
 
 // --- Top bar ---------------------------------------------------------------------------------------
 
+// Redraws a row of top-bar buttons; a keyboard user who was in the row stays on its chosen button.
+function redrawPicks(box, buttons) {
+  const inside = box.contains(document.activeElement);
+  box.replaceChildren(...buttons);
+  if (inside) box.querySelector('[aria-pressed="true"]')?.focus();
+}
+
 function drawThemes() {
   const box = document.getElementById('themes');
   box.setAttribute('aria-label', t('look'));
-  box.replaceChildren(...THEMES.map(([id, key]) => el('button', {
+  redrawPicks(box, THEMES.map(([id, key]) => el('button', {
     class: 'theme-pick', type: 'button', 'data-look': id, title: t('lookTitle', { name: t(key) }),
     'aria-pressed': String(document.documentElement.dataset.theme === id),
     onclick() { document.documentElement.dataset.theme = id; store.set('theme', id); drawThemes(); },
   }, el('span', { class: 'swatch', 'aria-hidden': 'true' }), t(key))));
 }
 
-function drawLanguages() {
-  const select = document.getElementById('lang');
-  select.setAttribute('aria-label', t('language'));
-  select.replaceChildren(...LANGS.map(code => el('option', { value: code, selected: code === lang,
-    text: window.I18N[code]._name })));
-  select.onchange = () => {
-    lang = select.value;
-    store.set('lang', lang);
-    document.documentElement.lang = lang;
-    drawThemes(); drawLanguages(); route();
-  };
+function drawLanguages() {   // small flags; the language's own name is the button's name and tooltip
+  const box = document.getElementById('lang');
+  box.setAttribute('aria-label', t('language'));
+  redrawPicks(box, LANGS.map(code => el('button', {
+    class: 'lang-pick', type: 'button', lang: code, title: window.I18N[code]._name,
+    'aria-label': window.I18N[code]._name, 'aria-pressed': String(code === lang),
+    onclick() {
+      lang = code;
+      store.set('lang', lang);
+      document.documentElement.lang = lang;
+      drawThemes(); drawLanguages(); route();
+    },
+  }, el('img', { src: `/flag-${code}.svg`, alt: '', width: 20, height: 14 }))));
 }
 
 // --- Home ------------------------------------------------------------------------------------------
@@ -188,7 +196,7 @@ function home() {
   // A textarea, so a list of songs keeps its lines; it grows with the list.
   const input = el('textarea', { class: 'link-input', rows: 1, autocomplete: 'off', spellcheck: 'false',
     placeholder: t('linkPlaceholder'), 'aria-label': t('linkLabel'), text: S.link });
-  const targets = el('div', { class: 'seg', role: 'group', 'aria-label': t('whereTo') });
+  const targets = el('div', { class: 'tiles', role: 'group', 'aria-label': t('whereTo') });
   const hint = el('p', { class: 'hint' });
   const go = el('button', { class: 'btn primary big', type: 'submit', text: t('findSongs') });
   // A Spotify data file: read here, in the page; the chosen playlist becomes lines in the song field.
@@ -215,10 +223,12 @@ function home() {
     const source = sourceOf(input.value.trim());
     const allowed = S.state.platforms.filter(p => p.name !== source);
     if (!S.target || S.target === source) S.target = source ? allowed[0].name : null;
+    // One big tile per service, by its mark (serviceMark). The source service is crossed out as text:
+    // a faded logo would alter the mark.
     targets.replaceChildren(...S.state.platforms.map(p => el('button', {
-      class: 'seg-item', type: 'button', disabled: p.name === source, text: p.label,
+      class: 'tile', type: 'button', disabled: p.name === source, 'aria-label': p.label,
       'aria-pressed': String(p.name === S.target), onclick() { S.target = p.name; drawTargets(); },
-    })));
+    }, p.name === source ? el('span', { class: 'svc-name', text: p.label }) : serviceMark(p))));
     hint.textContent = !input.value.trim() ? t('hintEmpty')
       : source === 'text' ? t('hintText', { songs: songs(listLines(input.value)) })
       : source ? t('hintFrom', { from: label(source) }) : t('hintUnknown');
@@ -298,6 +308,10 @@ const soundcloudMark = link => {
   return link ? el('a', { class: 'sc-mark', href: 'https://soundcloud.com', target: '_blank', rel: 'noopener noreferrer' }, img)
     : el('span', { class: 'sc-mark' }, img);
 };
+// A service in the big tiles and the Services list. YouTube's rules allow its logo only at 100 px or more
+// and forbid copying its lettering, so it is its name in our own font.
+const serviceMark = p => p.name === 'spotify' ? spotifyMark() : p.name === 'soundcloud' ? soundcloudMark(false)
+  : el('span', { class: 'svc-name', text: p.label });
 const service = name => name === 'spotify' ? spotifyMark() : label(name);
 const redrawHome = () => document.getElementById('view').replaceChildren(home());
 const GUIDE = 'https://github.com/9w1voo/DoriePlay#connecting-the-services';
@@ -335,8 +349,7 @@ function connectionsSection() {
   const left = S.state.youtube_searches_left;
   return el('section', { class: 'block' }, el('h2', { text: t('services') }),
     el('div', { class: 'conn-list' }, S.state.platforms.map(p => el('div', { class: 'conn' },
-      el('span', { class: 'conn-name' }, p.name === 'spotify' ? spotifyMark() : p.name === 'soundcloud' ? soundcloudMark()
-        : p.label),
+      el('span', { class: 'conn-name' }, serviceMark(p)),
       p.no_key ? el('span', { class: 'dot on', text: t('keyNotNeeded') })
         : el('span', { class: 'dot ' + (p.key ? 'on' : 'off'), text: p.key ? t('keyYes') : t('keyNo') }),
       el('span', { class: 'dot ' + (p.signed_in ? 'on' : 'idle'), text: p.signed_in ? t('signedYes') : t('signedLater') }),

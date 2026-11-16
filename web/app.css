@@ -78,7 +78,11 @@ button { font: inherit; color: inherit; }
 .brand-mark { display: block; width: 28px; height: 28px; border-radius: 7px; box-shadow: 0 4px 12px rgb(0 0 0 / 0.25); }
 .version { align-self: flex-end; margin-bottom: 3px; color: var(--muted); font: 500 0.72rem var(--font); letter-spacing: 0; }
 .top-right { display: flex; align-items: center; gap: 8px; }
-.lang { padding: 7px 10px; border: 1px solid var(--glass-edge); border-radius: 99px; background: var(--surface); color: var(--text); font: 0.85rem var(--font); cursor: pointer; }
+.langs { display: flex; gap: 2px; padding: 3px; border-radius: 99px; box-shadow: var(--glass-shine); }
+.lang-pick { display: flex; padding: 7px 6px; border: 0; border-radius: 99px; background: none; cursor: pointer; opacity: 0.55; }
+.lang-pick:hover { opacity: 0.85; }
+.lang-pick[aria-pressed="true"] { opacity: 1; background: var(--surface-2); box-shadow: var(--glass-shine); }
+.lang-pick img { display: block; width: 20px; height: 14px; object-fit: cover; border-radius: 3px; box-shadow: 0 0 0 1px rgb(128 128 128 / 0.35); }
 .themes { display: flex; gap: 4px; padding: 3px; border-radius: 99px; box-shadow: var(--glass-shine); }
 .theme-pick { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; border-radius: 99px; background: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; }
 .theme-pick[aria-pressed="true"] { background: var(--surface-2); color: var(--text); box-shadow: var(--glass-shine); }
@@ -125,11 +129,30 @@ textarea.link-input.multi { border-radius: 22px; }
 .file-lists .chips { margin-top: 6px; }
 .start-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .to { display: grid; gap: 6px; }
-.seg { display: inline-flex; border: 1px solid var(--glass-edge); border-radius: 99px; overflow: hidden; background: var(--surface); }
-.seg-item { padding: 10px 18px; border: 0; border-right: 1px solid var(--line); background: none; cursor: pointer; }
-.seg-item:last-child { border-right: 0; }
-.seg-item[aria-pressed="true"] { background: var(--text); color: var(--bg); font-weight: 600; }
-.seg-item:disabled { opacity: 0.35; cursor: not-allowed; text-decoration: line-through; }
+.to { flex: 1 1 440px; }
+/* Target services: one big tile each. The chosen tile gets an accent ring, its background stays, so the
+   logos keep the colours their rules ask for (Spotify white on dark, black on light). */
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.tile {
+  display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 0;
+  border: 1px solid var(--glass-edge); border-radius: var(--radius-s); background: var(--surface); cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.tile:hover:not(:disabled) { border-color: var(--accent); }
+.tile[aria-pressed="true"] {
+  border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.tile:disabled { cursor: not-allowed; }
+.tile:disabled .svc-name { opacity: 0.4; text-decoration: line-through; }
+.svc-name { font: 700 1.35rem/1 var(--font); letter-spacing: -0.01em; }
+/* Spotify full logo: 110 px wide, so its icon is 30 px tall and the clear space (half of it) is 15 px. */
+.tile .sp-mark, .conn-name .sp-mark { padding: 15px; }
+.tile .sp-mark img, .conn-name .sp-mark img { width: 110px; }
+.conn-name .sp-mark { margin-left: -15px; }   /* logo lines up with the names below; its clear space stays empty */
+.tile .sc-mark, .conn-name .sc-mark { padding: 9px 13px; }
+.tile .sc-mark img { width: 100px; }   /* badge 126 px: fits a tile just above the phone width (about 145 px) */
+.conn-name .sc-mark img { width: 110px; }
 .plan-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .plan-card { display: grid; gap: 6px; padding: 16px; text-decoration: none; }
 .plan-card:hover { border-color: var(--accent); }
@@ -140,7 +163,7 @@ textarea.link-input.multi { border-radius: 22px; }
 .conn-list { display: grid; overflow: hidden; }
 .conn { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: center; padding: 12px 16px; }
 .conn + .conn { border-top: 1px solid var(--line); }
-.conn-name { font-weight: 600; min-width: 110px; }
+.conn-name { display: flex; align-items: center; min-width: 150px; }
 .conn-setup { margin-left: auto; }
 .setup { flex: 1 1 100%; display: grid; gap: 10px; padding-top: 6px; }
 .setup-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
@@ -252,7 +275,7 @@ button.stat:hover { transform: translateY(-1px); }
   .view { padding-top: 18px; }
   .theme-pick { padding: 5px 7px; font-size: 0; gap: 0; }
   .top { flex-wrap: wrap; }
-  .lang { max-width: 8.5em; }
+  .lang-pick { padding: 7px 4px; }
   .swatch { width: 16px; height: 16px; }
   .row-main { grid-template-columns: 2.4ch minmax(0, 1fr) auto; row-gap: 4px; }
   .arrow { display: none; }
@@ -265,11 +288,22 @@ button.stat:hover { transform: translateY(-1px); }
   .stat b { font-size: 1.4rem; }
   .start-row { align-items: stretch; }
   .start-row .btn.big, .to { flex: 1 1 100%; }
-  .seg { display: flex; }
-  .seg-item { flex: 1; min-width: 0; padding: 10px 4px; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; }
+  /* three tiles still fit from 360 px: Spotify at its 70 px minimum with its 10 px clear space */
+  .start { padding: 14px; }
+  .tiles { gap: 6px; }
+  .tile { min-height: 64px; padding: 0; }
+  .tile .sp-mark { padding: 10px; }
+  .tile .sp-mark img { width: 70px; }
+  .tile .sc-mark { padding: 7px 8px; }
+  .tile .sc-mark img { width: 72px; }
+  .tile .svc-name { font-size: 0.95rem; }   /* the crossed-out "SoundCloud" fits a 360 px phone */
   .apply-bar { bottom: 8px; padding: 10px 12px; }
   .apply-bar .btn.primary { flex: 1 1 100%; white-space: normal; }
   .stat span { font-size: 0.78rem; line-height: 1.25; }
+}
+@media (max-width: 359px) {   /* narrower than any phone: one tile per line, so no logo is squeezed or cut */
+  .tiles { grid-template-columns: minmax(0, 1fr); }
+  .tile { min-height: 52px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 

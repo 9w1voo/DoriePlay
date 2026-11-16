@@ -33,7 +33,8 @@ STATIC = {'/': ('index.html', 'text/html'), '/app.css': ('app.css', 'text/css'),
           '/app.js': ('app.js', 'text/javascript'), '/i18n.js': ('i18n.js', 'text/javascript'),
           '/logo.svg': ('logo.svg', 'image/svg+xml'), '/soundcloud.png': ('soundcloud.png', 'image/png'),
           '/spotify-white.svg': ('spotify-white.svg', 'image/svg+xml'),
-          '/spotify-black.svg': ('spotify-black.svg', 'image/svg+xml')}
+          '/spotify-black.svg': ('spotify-black.svg', 'image/svg+xml'),
+          **{f'/flag-{code}.svg': (f'flag-{code}.svg', 'image/svg+xml') for code in ('en', 'uk', 'nl', 'ru', 'es')}}
 PLAN_NAME = re.compile(r'[A-Za-z0-9_-]{1,60}')
 YOUTUBE_SEARCHES_PER_DAY = 100
 # Any web page can send requests to 127.0.0.1, and this server can change the user's playlists:
