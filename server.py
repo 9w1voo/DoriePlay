@@ -219,9 +219,11 @@ class App:
             for path in self.plans.glob('*.json'):
                 with contextlib.suppress(Exception):   # a broken file must not stop the sign-out
                     plan = dorieplay.load(path)
-                    if isinstance(plan, dict) and 'soundcloud' in (plan.get('from'), plan.get('to')):
+                    if (isinstance(plan, dict) and 'soundcloud' in (plan.get('from'), plan.get('to'))
+                            and not plan.get('soundcloud_cleared')):
                         dorieplay.save(path, dorieplay.clear_soundcloud(plan))
-            dorieplay.read_cache()   # drops the SoundCloud answers and writes the file back
+            with contextlib.suppress(OSError, ValueError):   # the sign-in is already gone: still answer
+                dorieplay.read_cache()   # drops the SoundCloud answers and writes the file back
             return {'signed_out': True, 'revoked': revoked, **self.connection(module)}
 
     def youtube_searches_left(self):
