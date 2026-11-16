@@ -17,6 +17,14 @@ def languages():
     return {code: (dict(TEXT.findall(re.sub(r'songs: \{[^}]*\},', '', body))), body) for code, body in blocks}
 
 
+def mascot_poses():
+    """The poses in web/mascot.js (written by design/mascot/poses.py --web): name -> (ms, hop, frames)."""
+    source = (WEB / 'mascot.js').read_text(encoding='utf-8')
+    return {name: ([int(x) for x in ms.split(',') if x.strip()], hop == 'true', re.findall(r"'([^']*)'", frames))
+            for name, ms, hop, frames in re.findall(
+                r"^ +(\w+): \{ ms: \[([\d, ]*)\], hop: (true|false), frames: \[(.*)\] \},$", source, re.M)}
+
+
 class Texts(unittest.TestCase):
     def test_english_is_first_and_all_five_languages_are_there(self):
         self.assertEqual(list(languages()), ['en', 'uk', 'nl', 'ru', 'es'])
@@ -50,6 +58,27 @@ class Texts(unittest.TestCase):
         code = [line for line in page.split('\n') if not line.strip().startswith(('//', '/*', '*'))]
         code = [re.sub(r'//.*$', '', line) for line in code]
         self.assertEqual([line for line in code if re.search('[А-Яа-яІіЇїЄєҐґ]', line)], [])
+
+
+class Mascot(unittest.TestCase):
+    def test_every_frame_is_24_by_23_in_the_logo_colours(self):
+        poses = mascot_poses()
+        self.assertEqual(sorted(poses), sorted(['stand', 'jump', 'wave', 'point_up', 'thumbs_up', 'shrug',
+                                                'think', 'listen', 'celebrate', 'yawn']))
+        for name, (ms, hop, frames) in poses.items():
+            self.assertEqual(len(ms), len(frames), name)
+            for frame in frames:
+                rows = [re.sub(r'(\d+)(\D)', lambda m: m[2] * int(m[1]), row) for row in frame.split('|')]
+                self.assertEqual(len(rows), 23, name)
+                self.assertEqual({len(row) for row in rows}, {24}, name)
+                self.assertLessEqual(set(''.join(rows)), set('.KVOWSHGP'), name)
+        self.assertEqual(sorted(n for n, (ms, hop, f) in poses.items() if hop), ['celebrate', 'jump'])
+
+    def test_the_mascot_never_writes_markup_or_style_attributes(self):
+        for name in ('mascot.js', 'app.js'):
+            source = (WEB / name).read_text(encoding='utf-8')
+            self.assertNotIn('innerHTML', source, name)
+            self.assertNotIn("setAttribute('style'", source, name)
 
 
 class Links(unittest.TestCase):

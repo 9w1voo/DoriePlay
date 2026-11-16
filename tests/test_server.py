@@ -106,6 +106,14 @@ class Security(ServerCase):
                 self.assertEqual(response.headers['Content-Type'], kind, path)
                 self.assertEqual(response.read(), (server.WEB / path).read_bytes(), path)
 
+    def test_the_mascot_script_is_served(self):
+        status, body = self.call('/mascot.js', token=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(body.encode(), (server.WEB / 'mascot.js').read_bytes())
+        self.assertEqual(server.STATIC['/mascot.js'], ('mascot.js', 'text/javascript'))
+        html = (server.WEB / 'index.html').read_text(encoding='utf-8')
+        self.assertIn('<script src="/i18n.js"></script>\n  <script src="/mascot.js"></script>\n  <script src="/app.js"></script>', html)
+
     def test_every_language_has_a_flag(self):
         source = (server.WEB / 'i18n.js').read_text(encoding='utf-8')
         codes = re.findall(r'\n  (\w+): \{\n', source)

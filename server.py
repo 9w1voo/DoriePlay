@@ -31,6 +31,7 @@ WEB = Path(__file__).resolve().parent / 'web'   # the page: part of the program,
 PLANS = paths.data_folder() / 'plans'
 STATIC = {'/': ('index.html', 'text/html'), '/app.css': ('app.css', 'text/css'),
           '/app.js': ('app.js', 'text/javascript'), '/i18n.js': ('i18n.js', 'text/javascript'),
+          '/mascot.js': ('mascot.js', 'text/javascript'),
           '/logo.svg': ('logo.svg', 'image/svg+xml'), '/soundcloud-white.png': ('soundcloud-white.png', 'image/png'),
           '/soundcloud-black.png': ('soundcloud-black.png', 'image/png'),
           '/spotify-white.svg': ('spotify-white.svg', 'image/svg+xml'),
