@@ -454,6 +454,9 @@ class Keys(unittest.TestCase):
                                                  'tracks': [json.loads(json.dumps(track))]})
             dorieplay.save(self.app.path('yt'), {'name': 'O', 'source': LINK, 'from': 'spotify', 'to': 'youtube',
                                                  'tracks': [json.loads(json.dumps(track))]})
+            full = {'source_title': 'S', 'uploader': 'uploader-x', 'source_url': 'https://soundcloud.com/a/b'}
+            dorieplay.save(self.app.path('from-sc'), {'name': 'F', 'source': LINK, 'from': 'soundcloud',
+                                                      'to': 'spotify', 'tracks': [{**json.loads(json.dumps(track)), **full}]})
             soundcloud.TOKEN_FILE.write_text('{"access_token": "dummy"}')
             untouched = self.app.path('yt').read_bytes()
             calls.clear()
@@ -465,6 +468,10 @@ class Keys(unittest.TestCase):
             self.assertIs(cleared['soundcloud_cleared'], True)
             self.assertEqual(cleared['tracks'][0]['candidates'], [{'id': 'm1'}])
             self.assertEqual(self.app.path('yt').read_bytes(), untouched)
+            source = dorieplay.load(self.app.path('from-sc'))
+            self.assertIs(source['soundcloud_cleared'], True)
+            for key in ('source_title', 'uploader', 'source_url'):
+                self.assertNotIn(key, source['tracks'][0])
             self.assertNotIn('soundcloud|', dorieplay.CACHE.read_text())
         calls.clear()
         self.app.job = {'state': 'running', 'plan': 'x'}

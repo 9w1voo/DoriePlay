@@ -690,6 +690,10 @@ class SoundCloud(PlatformCase):
         asked[0] = {'sharing': 'public', 'user': {'urn': 'soundcloud:users:2'}}
         soundcloud.read_playlist('soundcloud:playlists:5')
         self.assertEqual(calls['me'], 1)
+        asked[0] = {'sharing': 'private'}   # no owner in the answer: still not shown
+        with self.assertRaises(ValueError) as caught:
+            soundcloud.read_playlist('https://soundcloud.com/x/sets/y')
+        self.assertEqual(str(caught.exception), soundcloud.PRIVATE_TEXT)
         for unclear in ({}, {'sharing': None}, {'sharing': 'Private'}):
             asked[0] = {**unclear, 'user': {'urn': 'soundcloud:users:2'}}   # not exactly 'public' = private
             with self.assertRaises(ValueError) as caught:
@@ -742,6 +746,14 @@ class SoundCloud(PlatformCase):
             self.assertFalse(soundcloud.TOKEN_FILE.exists())
             self.assertIsNone(soundcloud._token)
             self.assertIsNone(soundcloud._me_urn)
+
+            write(**good)
+            calls = self.relay_answers((400, {}))
+            soundcloud._token = {'x': 1}
+            self.assertIs(soundcloud.disconnect(), False)
+            self.assertEqual(len(calls), 1)
+            self.assertFalse(soundcloud.TOKEN_FILE.exists())
+            self.assertIsNone(soundcloud._token)
 
             write(**{**good, 'expires_at': 0})
             calls = self.relay_answers((502, {'error': 'x'}))

@@ -296,10 +296,16 @@ def apply_plan(args):
             missing.append((item, label))
     # add_items returns the songs the platform refused, so one dead link does not block the rest.
     skipped = target.add_items(playlist_id, missing) or []
+    undecided = 0
     if not skipped and 'soundcloud' in (plan.get('from'), plan.get('to')):
+        undecided = sum(1 for t in plan['tracks']
+                        if not t.get('approved') and not t.get('decided') and t.get('candidates'))
         clear_soundcloud(plan)
     save(args.plan, plan)
     print(f'{len(missing) - len(skipped)} added, {len(approved) - len(missing)} were already there.')
+    if undecided:
+        print(f'{undecided} songs still needed a decision; their SoundCloud details were removed with the rest, '
+              'as SoundCloud’s rules require. To transfer them later, make a new plan.')
     if skipped:
         print(f'{len(skipped)} could not be added:')
         for label, reason in skipped:

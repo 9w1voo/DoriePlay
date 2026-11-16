@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -226,6 +227,19 @@ class TestRelay(Base):
             self.assertEqual(self.call(port, {'grant_type': 'x'}, headers={'X-Forwarded-For': f'5.5.5.{n}'})[0], 400)
         results = [self.call(port, headers={'X-Forwarded-For': f'6.6.6.{n}'})[0] for n in (1, 2, 3)]
         self.assertEqual(results, [200, 200, 429])
+
+    def test_the_limits_start_over_after_an_hour(self):
+        offset = [0]
+        clock = types.SimpleNamespace(monotonic=lambda: time.monotonic() + offset[0])
+        with mock.patch.object(relay, 'time', clock):
+            port = self.start(per_address=1, total=1)
+            first = {'X-Forwarded-For': '1.1.1.1'}
+            self.assertEqual(self.json_call(port, headers=first)[0], 200)
+            self.assertEqual(self.json_call(port, headers=first), (429, {'error': 'relay_limit'}, mock.ANY))
+            self.assertEqual(self.json_call(port, headers={'X-Forwarded-For': '2.2.2.2'})[:2],
+                             (503, {'error': 'relay_busy'}))
+            offset[0] = 3601
+            self.assertEqual(self.json_call(port, headers=first)[0], 200)
 
     def test_too_many_at_once_are_turned_away(self):
         port = self.start(parallel=1)

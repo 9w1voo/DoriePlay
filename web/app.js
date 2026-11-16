@@ -564,13 +564,15 @@ async function decide(index, approved, matchId) {
   } catch (error) { toast(error.message, true); }
 }
 
-function confirmApply(count) {
+function confirmApply(count, ask) {
   const dialog = document.getElementById('confirm');
   dialog.replaceChildren(
     el('h2', { text: S.plan.applied ? t('addQ') : t('createQ') }),
     el('p', { text: S.plan.applied ? t('addBody', { to: label(S.plan.to), title: S.plan.title, count })
       : S.plan.to === 'spotify' ? t('createBodySpotify', { title: S.plan.title, count })
       : t('createBody', { to: label(S.plan.to), title: S.plan.title, count }) }),
+    ask > 0 && !S.plan.cleared && (S.plan.from === 'soundcloud' || S.plan.to === 'soundcloud')
+      && el('p', { class: 'hint', text: t('scPendingLost', { count: ask }) }),
     !S.plan.applied && spotifyNote(),
     el('div', { class: 'dialog-actions' },
       el('button', { class: 'btn ghost', type: 'button', text: t('cancel'), onclick: () => dialog.close() }),
@@ -633,7 +635,7 @@ function drawPlan() {
         target: '_blank', rel: 'noopener noreferrer', text: t('playlistLink') }),
       el('button', { class: 'btn primary', type: 'button', disabled: !going,
         text: S.plan.applied ? t('addNew') : S.plan.to === 'spotify' ? t('createPlaylist') : t('createPrivate'),
-        onclick: () => confirmApply(going) }))));
+        onclick: () => confirmApply(going, counts.ask) }))));
 }
 
 // --- Routing and polling ----------------------------------------------------------------------------

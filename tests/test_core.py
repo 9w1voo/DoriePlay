@@ -237,15 +237,45 @@ class Clear(Case):
     def test_from_soundcloud_titles_go_and_ids_stay(self):
         self.sc()
         platforms.PLATFORMS['fake'] = Fake()
-        full = {'uploader': 'u', 'source_url': 'https://soundcloud.com/a/b', 'isrc': 'X', 'source_title': 'S'}
+        full = {'uploader': 'uploader-x', 'source_url': 'https://soundcloud.com/a/b', 'isrc': 'X', 'source_title': 'S'}
         self.put('soundcloud', 'fake', [{**approved('aaaaaaaaaaa'), **full, 'source_id': 'src1'}])
         self.apply()
         found = dorieplay.load(self.plan)['tracks'][0]
-        for key in dorieplay.SOURCE_FIELDS:
+        for key in ('title', 'artists', 'source_title', 'isrc', 'uploader', 'source_url'):
             self.assertNotIn(key, found)
+        text = Path(self.plan).read_text(encoding='utf-8')
+        self.assertNotIn('soundcloud.com', text)
+        self.assertNotIn('uploader-x', text)
         self.assertEqual((found['source_id'], found['duration_ms'], found['approved'], found['match_id']),
                          ('src1', 1000, True, 'aaaaaaaaaaa'))
         self.assertEqual(dorieplay.describe(found), found['source_id'])
+
+    def output(self):
+        out = self.quiet(dorieplay.apply_plan, self.args())[1]
+        return out if isinstance(out, str) else str(out)
+
+    def test_clean_transfer_warns_about_undecided_songs(self):
+        self.sc()
+        done = {**approved('c1'), 'candidates': [self.candidate('c1')]}
+        waiting = {**track('s2'), 'approved': False, 'match_id': None, 'candidates': [self.candidate('c2')]}
+        self.put('spotify', 'soundcloud', [done, waiting])
+        self.assertIn('1 songs still needed a decision', self.output())
+
+    def test_no_warning_when_all_are_decided_or_none_wait(self):
+        self.sc()
+        done = {**approved('c1'), 'candidates': [self.candidate('c1')]}
+        passed = {**track('s2'), 'approved': False, 'decided': True, 'match_id': None,
+                  'candidates': [self.candidate('c2')]}
+        self.put('spotify', 'soundcloud', [done, passed])
+        self.assertNotIn('still needed a decision', self.output())
+
+    def test_no_warning_while_songs_are_skipped(self):
+        self.sc(refuse={'bad'})
+        good = {**approved('good'), 'candidates': [self.candidate('good')]}
+        bad = {**approved('bad'), 'candidates': [self.candidate('bad')]}
+        waiting = {**track('s3'), 'approved': False, 'match_id': None, 'candidates': [self.candidate('c3')]}
+        self.put('spotify', 'soundcloud', [good, bad, waiting])
+        self.assertNotIn('still needed a decision', self.output())
 
     def test_nothing_is_cleared_while_songs_are_left_out(self):
         fake = self.sc(refuse={'bad'})
