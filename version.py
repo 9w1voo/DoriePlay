@@ -1,8 +1,10 @@
 """Dorie Play's version, and whether a newer one is out (for copies downloaded from the site)."""
 import re
+import sys
 
 VERSION = '1.0.0'
-CHANNEL = 'site'   # a store build sets 'store': the store updates the app, so there is no check and no link
+# Windows copies come only from the Microsoft Store, which updates them: no check and no link there
+CHANNEL = 'store' if sys.platform == 'win32' and getattr(sys, 'frozen', False) else 'site'
 LATEST = 'https://api.github.com/repos/9w1voo/DoriePlay/releases/latest'
 
 

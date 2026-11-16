@@ -3,6 +3,7 @@
 Run from the project folder:  python -m unittest discover tests
 """
 import contextlib
+import importlib
 import json
 import os
 import re
@@ -358,6 +359,16 @@ class Version(ServerCase):
         self.assertIsNone(version.latest())
         self.assertIsNone(version.latest())
         self.assertIsNone(version.latest())
+
+    def test_the_windows_build_is_the_store_build(self):
+        # Windows copies come only from the Microsoft Store, which updates them: no GitHub check, no download link
+        self.addCleanup(importlib.reload, version)
+        with mock.patch.object(sys, 'platform', 'win32'), mock.patch.object(sys, 'frozen', True, create=True):
+            self.assertEqual(importlib.reload(version).CHANNEL, 'store')
+        with mock.patch.object(sys, 'platform', 'darwin'), mock.patch.object(sys, 'frozen', True, create=True):
+            self.assertEqual(importlib.reload(version).CHANNEL, 'site')
+        with mock.patch.object(sys, 'platform', 'win32'):
+            self.assertEqual(importlib.reload(version).CHANNEL, 'site')   # run from the code
 
     def test_the_demo_never_asks_and_the_page_gets_the_version(self):
         self.requests_stub(lambda *args, **kwargs: self.fail('the demo asked GitHub'))

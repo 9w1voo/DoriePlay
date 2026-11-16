@@ -26,3 +26,5 @@ discogs_*.xml.gz
 !tests/test_amtoken.py
 webview/
 *.log
+/dist/
+/build/

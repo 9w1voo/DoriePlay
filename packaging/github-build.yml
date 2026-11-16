@@ -1,12 +1,19 @@
+# GitHub Actions: tests and builds on Windows and the Mac; the files are downloadable from the run page.
+# Lives here, not in .github/workflows/, until the token that pushes from the Mac has the `workflow` permission
+# (GitHub refuses workflow files otherwise). Then:  git mv packaging/github-build.yml .github/workflows/build.yml
 name: build
 
 on:
   push:
-    branches: [desktop]
+    branches: [desktop, main]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  PYTHONUTF8: '1'
+  DORIEPLAY_SONGBASE: ''
 
 jobs:
   windows:
@@ -14,29 +21,55 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
       - name: Install
-        run: python -m pip install --disable-pip-version-check -r requirements.txt pywebview==6.2.1
+        run: python -m pip install --disable-pip-version-check -r requirements-window.txt pyinstaller
       - name: Tests
         # failures go out as one annotation: job logs need a login, annotations do not
         run: |
           python -m unittest discover tests > test.log 2>&1 && tail -3 test.log || {
             echo "::error title=tests::$(tail -c 6000 test.log | python -c 'import sys; print(sys.stdin.read().replace("%", "%25").replace("\r", "").replace("\n", "%0A"))')"
             exit 1; }
-      - name: Window libraries load (gate B, Windows)
-        if: always()
-        run: python -c "import webview, clr; from webview.platforms import winforms; print('pywebview ok')"
-      - name: Server answers (demo)
-        if: always()
+      - name: Build the Store package
+        run: powershell -ExecutionPolicy Bypass -File packaging/windows/build.ps1
+      - name: Check the built program
         run: |
-          python server.py --demo --no-browser --port 8765 > server.log 2>&1 &
-          for i in $(seq 30); do curl -sf -o page.html http://127.0.0.1:8765/ && break; sleep 1; done
-          grep -q 'name="dorie-token"' page.html || {
-            echo "::error title=server::$(tr -d '\r' < server.log | tr '\n' ' ' | tail -c 3000)"; exit 1; }
-          echo "page ok"
+          ./dist/DoriePlay/DoriePlay.exe --self-test || { echo "::error title=self-test::window libraries do not load"; exit 1; }
+          ./dist/DoriePlay/DoriePlay.exe --demo --no-window --port 8790 &
+          for i in $(seq 30); do curl -sf -o page.html http://127.0.0.1:8790/ && break; sleep 1; done
+          token=$(grep -o 'name="dorie-token" content="[^"]*"' page.html | sed 's/.*content="//; s/"$//')
+          test -n "$token" || { echo "::error title=built program::the page did not load"; exit 1; }
+          curl -sf -o /dev/null -H "X-Dorie-Token: $token" http://127.0.0.1:8790/api/state ||
+            { echo "::error title=built program::/api/state failed"; exit 1; }
+          test -f dist/DoriePlay/_internal/certifi/cacert.pem || { echo "::error title=built program::no certifi"; exit 1; }
+          if find dist -name '*.sqlite' -o -name 'CLAUDE.md' -o -name '*token*.json' | grep -q .; then
+            echo "::error title=built program::private files in the build"; exit 1; fi
+          echo "built program ok"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DoriePlay-windows
+          path: |
+            dist/DoriePlay-*.msix
+            dist/DoriePlay/
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install
+        run: python -m pip install --disable-pip-version-check -r requirements-window.txt pyinstaller
+      - name: Tests
+        run: python -m unittest discover tests
+      - name: Build
+        run: sh packaging/mac/build.sh python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DoriePlay-mac
+          path: dist/DoriePlay-mac.dmg
