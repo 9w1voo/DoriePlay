@@ -71,7 +71,8 @@ class Window(unittest.TestCase):
             fallback = Path(temp) / 'dorieplay-startup.log'   # never the real temp folder's log
             with mock.patch.object(window, 'LOG', blocker / 'startup.log'), \
                     mock.patch.object(window.tempfile, 'gettempdir', lambda: temp):
-                self.assertEqual(window.log_error('x'), fallback)
+                # the real path: the Store app's %APPDATA% is redirected, and Explorer runs outside that redirect
+                self.assertEqual(window.log_error('x'), fallback.resolve())
             self.assertIn('x', fallback.read_text(encoding='utf-8'))
 
     def test_only_the_window_module_imports_webview(self):

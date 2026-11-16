@@ -56,6 +56,8 @@ jobs:
           for i in $(seq 60); do api http://127.0.0.1:8790/api/job | grep -q '"state": "done"' && break; sleep 1; done
           api http://127.0.0.1:8790/api/job | grep -q '"state": "done"' || fail "the demo search did not finish"
           test -f dist/DoriePlay/_internal/certifi/cacert.pem || fail "no certifi"
+          test -f dist/DoriePlay/_internal/THIRD-PARTY-NOTICES.md || fail "no licence notices"
+          ls -d dist/DoriePlay/_internal/pythonnet-*.dist-info > /dev/null || fail "no pythonnet licence"
           found=$(find dist/DoriePlay \( -name '*.sqlite' -o -name 'CLAUDE.md' -o -name '*token*.json' -o -name plans -o -name design \) -print)
           test -z "$found" || fail "private files in the build: $found"
           echo "built program ok"

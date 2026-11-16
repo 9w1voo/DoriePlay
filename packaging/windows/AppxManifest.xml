@@ -15,7 +15,8 @@
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0"/>
+    <!-- 1903 or newer: on 1809 Windows copies every data write and one WebView2 failure in packaged apps is unresolved -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.18362.0" MaxVersionTested="10.0.26100.0"/>
   </Dependencies>
   <Resources>
     <Resource Language="en-us"/>

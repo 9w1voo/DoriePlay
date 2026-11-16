@@ -111,7 +111,7 @@ def log_error(text):
             target.parent.mkdir(parents=True, exist_ok=True)
             with open(target, 'a', encoding='utf-8') as log:
                 log.write(entry)
-            return target
+            return target.resolve()   # the Store app's %APPDATA% is redirected; this is where the file really is
         except OSError:
             continue
     return None
@@ -172,7 +172,7 @@ def main(argv=None):
         window.events.closing += lambda: on_closing(window, app)
         threading.Thread(target=version.check, args=(app,), daemon=True).start()
         webview.start(gui='edgechromium' if sys.platform == 'win32' else None, private_mode=False,
-                      storage_path=str(STORAGE))
+                      storage_path=str(paths.ensure(STORAGE).resolve()))   # the same real folder for WebView2's helpers
         return 0
     except Exception as error:
         where = log_error(traceback.format_exc())

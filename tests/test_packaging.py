@@ -31,6 +31,16 @@ class StorePackage(unittest.TestCase):
             path = PROJECT / 'packaging' / 'windows' / ''.join(found).replace('\\', '/')
             self.assertTrue(path.is_file(), path)
 
+    def test_the_build_carries_the_licences_of_what_it_ships(self):
+        # BSD and MIT licences ask that a binary copy carries their text; pywebview's wheel ships Microsoft's
+        # WebView2 DLLs without it, so the notices file brings it
+        notices = (PROJECT / 'packaging' / 'THIRD-PARTY-NOTICES.md').read_text(encoding='utf-8')
+        self.assertIn('Microsoft.Web.WebView2 1.0.3856.49', notices)
+        self.assertIn('Redistributions in binary form must reproduce', notices)
+        spec = (PROJECT / 'packaging' / 'dorieplay.spec').read_text(encoding='utf-8')
+        self.assertIn('THIRD-PARTY-NOTICES.md', spec)
+        self.assertIn('copy_metadata', spec)   # every other library's licence, from its .dist-info folder
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -21,7 +21,7 @@
     <p>Dorie Play is a program that runs on your own computer. It talks to the services you choose directly from your computer. Two small Dorie Play servers help: the song base and the SoundCloud sign-in server. Neither keeps logs or stores anything about you, and the developer keeps no data about you, your playlists or how you use the program. There are no accounts, no analytics and no ads.</p>
 
     <h2>What the program keeps on your computer</h2>
-    <p>Everything below is stored in the program’s data folder on your computer and nowhere else. That is the program folder when you run Dorie Play from its source code; for the installed program it is <code>%APPDATA%\Dorie Play</code> on Windows (inside the private storage the Microsoft Store gives the app) and <code>~/Library/Application Support/Dorie Play</code> on the Mac.</p>
+    <p>Everything below is stored in the program’s data folder on your computer and nowhere else. That is the program folder when you run Dorie Play from its source code; for the installed program it is <code>~/Library/Application Support/Dorie Play</code> on the Mac and, on Windows, the app’s private storage that Windows gives every Microsoft Store app: the program asks for <code>%APPDATA%\Dorie Play</code>, and Windows keeps it in <code>%LOCALAPPDATA%\Packages\…\LocalCache\Roaming\Dorie Play</code>. Windows deletes that storage when you uninstall the app or reset it (Settings → Apps → Dorie Play → Advanced options → Reset).</p>
     <ul>
       <li><b>Your API keys</b> for the services you connect: <code>spotify-client.json</code>, <code>google-client.json</code>. Keys saved through the program's set-up page are readable only by
         your user account; a key file you put there yourself keeps the permissions you gave it.</li>
@@ -34,8 +34,8 @@
         They stay until you delete them.</li>
       <li><b>Search answers</b> in <code>.search-cache.json</code>, so that the same songs are not searched twice.
         Answers older than 30 days are not used again and are removed the next time the program searches.</li>
-      <li>In your browser, the page remembers only your chosen language and look (light or dark). The program’s own window keeps the same, plus the cookies a player sets when you press “Listen”, in its own web storage: the <code>webview</code> folder in the data folder on Windows, the system’s web storage for the program on the Mac.</li>
-      <li><b>A start-up log</b>, <code>startup.log</code>, only when the program cannot start: the error, without song names, keys or links.</li>
+      <li>In your browser, the page remembers only your chosen language and look (light or dark), whether you hid the tips, and that it has greeted you once. The program’s own window keeps the same, plus the cookies a player sets when you press “Listen”, in its own web storage: the <code>webview</code> folder in the data folder on Windows, the system’s web storage for the program on the Mac (<code>~/Library/WebKit</code>).</li>
+      <li><b>A start-up log</b>, <code>startup.log</code>, only when the program cannot start: the error, without song names, keys or links. If the data folder cannot be written, the log goes to the system’s temporary folder as <code>dorieplay-startup.log</code> instead, and stays there until the system or you clear that folder.</li>
     </ul>
 
     <h2>What is sent, and to whom</h2>
@@ -50,7 +50,7 @@
         requests per address in memory only, and forgets the counts every hour. The videos it suggests are then checked with YouTube to see
         that they still play;</li>
       <li>to the Dorie Play sign-in server for SoundCloud (base.dorieplay.com), when you sign in to SoundCloud and about once an hour while you use it: the one-time sign-in code, or the token that renews your sign-in. The server adds Dorie Play’s SoundCloud app key, passes the request to SoundCloud and returns SoundCloud’s answer to your computer. These tokens give access to your SoundCloud account and may contain account details. The server keeps no logs and stores nothing; to limit how often one internet address may ask, it counts requests per address in memory only, and forgets the counts every hour. Everything else goes from your computer to SoundCloud directly;</li>
-      <li>the copy of Dorie Play downloaded from this site asks GitHub (api.github.com) once at start whether a newer version is out; GitHub sees your internet address. The Microsoft Store version does not ask: the Store updates it;</li>
+      <li>the program in its own window asks GitHub (api.github.com) once at start whether a newer version is out; GitHub sees your internet address. The Microsoft Store version does not ask: the Store updates it;</li>
       <li>creating a playlist and adding the songs you approved, when you confirm the transfer. On YouTube and
         SoundCloud the playlist is private. Spotify makes playlists created by apps public: anyone with the link
         can open it, and it shows your Spotify profile name. You can make it private in the Spotify app.</li>
