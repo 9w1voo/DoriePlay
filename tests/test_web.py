@@ -76,5 +76,55 @@ class Links(unittest.TestCase):
         self.assertIn("el('a', { class: 'sc-mark', href: 'https://soundcloud.com'", page)
 
 
+def top_level_arguments(source, start):
+    """Each argument of the call whose '(' is at source[start]: (text, has a top-level && or ||)."""
+    args, depth, quote, current, condition = [], 0, None, '', False
+    text = source[start + 1:]
+    i = 0
+    while i < len(text):
+        char = text[i]
+        if quote:
+            if char == '\\':
+                current += text[i:i + 2]
+                i += 2
+                continue
+            if char == quote:
+                quote = None
+        elif text.startswith('//', i):   # a comment runs to the end of the line
+            i = text.index('\n', i)
+            continue
+        elif char in '\'"`':
+            quote = char
+        elif char in '([{':
+            depth += 1
+        elif char in ')]}':
+            if depth == 0:
+                return args + [(current, condition)]
+            depth -= 1
+        elif char == ',' and depth == 0:
+            args.append((current, condition))
+            current, condition = '', False
+            i += 1
+            continue
+        elif depth == 0 and text[i:i + 2] in ('&&', '||'):
+            condition = True
+        current += char
+        i += 1
+    raise ValueError('unbalanced call')
+
+
+class Children(unittest.TestCase):
+    def test_no_condition_is_handed_straight_to_replace_children(self):
+        # el() skips false children, but node.replaceChildren(false) shows the word "false" on the page
+        page = (WEB / 'app.js').read_text(encoding='utf-8')
+        calls = [m.end() - 1 for m in re.finditer(r'\.replaceChildren\(', page)]
+        self.assertGreater(len(calls), 5)
+        for start in calls:
+            for argument, condition in top_level_arguments(page, start):
+                self.assertFalse(condition, argument.strip()[:80])
+                if argument.strip().startswith('...['):   # a list may hold conditions only when it is filtered
+                    self.assertTrue(argument.strip().endswith('].filter(Boolean)'), argument.strip()[:80])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -566,7 +566,7 @@ async function decide(index, approved, matchId) {
 
 function confirmApply(count, ask) {
   const dialog = document.getElementById('confirm');
-  dialog.replaceChildren(
+  dialog.replaceChildren(...[   // replaceChildren would show a false child as the word "false"
     el('h2', { text: S.plan.applied ? t('addQ') : t('createQ') }),
     el('p', { text: S.plan.applied ? t('addBody', { to: label(S.plan.to), title: S.plan.title, count })
       : S.plan.to === 'spotify' ? t('createBodySpotify', { title: S.plan.title, count })
@@ -580,7 +580,7 @@ function confirmApply(count, ask) {
         dialog.close();
         try { S.state.job = await api(`plans/${S.plan.name}/apply`, {}); drawPlan(); poll(); }
         catch (error) { toast(error.message, true); }
-      } })));
+      } }))].filter(Boolean));
   dialog.showModal();
 }
 
