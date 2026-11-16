@@ -185,7 +185,9 @@ function drawThemes() {
 
 function drawTipsSwitch() {
   const name = tipsOn ? t('tipsHide') : t('tipsShow');
-  document.getElementById('tips-switch').replaceChildren(el('button', {
+  const box = document.getElementById('tips-switch');
+  const focused = box.contains(document.activeElement);   // a keyboard user stays on the button
+  const button = el('button', {
     class: 'tips-toggle', type: 'button', title: name, 'aria-label': name, 'aria-pressed': String(tipsOn),
     onclick() {
       tipsOn = !tipsOn;
@@ -193,7 +195,9 @@ function drawTipsSwitch() {
       S.signin = null;   // the sign-in card is kept while its link waits: rebuild it with or without the tip
       drawTipsSwitch(); route();
     },
-  }, window.Mascot.node('stand')));
+  }, window.Mascot.node('stand'));
+  box.replaceChildren(button);
+  if (focused) button.focus();
 }
 
 function drawLanguages() {   // small flags; the language's own name is the button's name and tooltip
@@ -267,7 +271,11 @@ function home() {
     }, p.name === source ? el('span', { class: 'svc-name', text: p.label }) : serviceMark(p))));
     const text = input.value.trim(), button = t('findSongs');
     if (text) store.set('greeted', '1');   // the greeting is for the very first visit only
-    const how = el('button', { class: 'link', type: 'button', text: t('tipHow'), onclick() { S.how = !S.how; drawTargets(); } });
+    const how = el('button', { class: 'link', type: 'button', text: t('tipHow'), 'aria-expanded': String(!!S.how), onclick() {
+      S.how = !S.how;
+      drawTargets();
+      hint.querySelector('.bubble .link')?.focus();   // the button was redrawn: keep the keyboard on it
+    } });
     const count = songs(listLines(input.value));
     // every branch has its grey line, so hidden tips never leave the slot empty
     hint.replaceChildren(!text ? (S.how ? tip('think', t('tipHowLink'), t('hintEmpty'), how)

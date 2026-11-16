@@ -61,8 +61,10 @@ window.Mascot = (() => {
       svg.replaceChildren(frames(name)[index].cloneNode(true));
       svg.dataset.frame = String(index);
     }
-    if (pose.hop && !still) {   // one sprite pixel = the drawn width / 24, so the bounce scales with the size
-      svg.style.transform = `translateY(${HOP[Math.floor(now / HOP_MS) % HOP.length] * svg.clientWidth / 24}px)`;
+    if (pose.hop && !still) {
+      // one sprite pixel = 1/23 of the drawn height: a percentage needs no layout, so a node made while
+      // still detached (the job card, redrawn every 0.5 s) is born at the clock's bounce, not at the baseline
+      svg.style.transform = `translateY(${HOP[Math.floor(now / HOP_MS) % HOP.length] * 100 / 23}%)`;
     }
   }
 
