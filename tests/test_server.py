@@ -98,7 +98,8 @@ class Security(ServerCase):
         self.assertEqual(self.app.summaries(), [])
 
     def test_the_service_marks_are_served_as_is(self):
-        for path, kind in (('soundcloud.png', 'image/png'), ('spotify-white.svg', 'image/svg+xml'),
+        for path, kind in (('soundcloud-white.png', 'image/png'), ('soundcloud-black.png', 'image/png'),
+                           ('spotify-white.svg', 'image/svg+xml'),
                            ('spotify-black.svg', 'image/svg+xml'), ('logo.svg', 'image/svg+xml')):
             with urllib.request.urlopen(f'http://127.0.0.1:{self.port}/{path}', timeout=10) as response:
                 self.assertEqual(response.status, 200, path)

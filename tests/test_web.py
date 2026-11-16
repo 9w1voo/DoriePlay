@@ -71,6 +71,14 @@ class Links(unittest.TestCase):
         self.assertEqual(body.count("alt: 'Spotify'"), 2, body)
         self.assertNotIn("alt: ''", body)
 
+    def test_the_soundcloud_logo_has_a_name_in_both_looks(self):
+        page = (WEB / 'app.js').read_text(encoding='utf-8')
+        body = re.search(r'const soundcloudMark = .*?\n(?=const )', page, re.S).group(0)
+        self.assertEqual(body.count("alt: t('scLogo')"), 2, body)
+        css = (WEB / 'app.css').read_text(encoding='utf-8')
+        self.assertIn('[data-theme="glass"] :is(.sp-black, .sc-black), '
+                      '[data-theme="glass-light"] :is(.sp-white, .sc-white) { display: none; }', css)
+
     def test_the_soundcloud_header_link_is_written_out_for_the_links_test(self):
         page = (WEB / 'app.js').read_text(encoding='utf-8')
         self.assertIn("el('a', { class: 'sc-mark', href: 'https://soundcloud.com'", page)

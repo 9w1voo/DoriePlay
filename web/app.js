@@ -313,15 +313,17 @@ const SETUP = {
     { text: t('setYt3'), href: 'https://console.cloud.google.com/auth/clients' }] },
 };
 // Official marks, shown only next to the service's own name or data (never as Dorie Play branding).
-// Spotify: the full logo, white on the dark look and black on the light one (the CSS hides the other).
-// SoundCloud: the white logo on its black badge. YouTube has no mark: its minimum height does not fit a label.
+// Monochrome, as both services' rules ask: white on the dark look, black on the light one (the CSS hides the other).
+// Spotify: the full logo. SoundCloud: its official logo files, without a badge.
+// YouTube has no mark: its minimum height does not fit a label.
 const spotifyMark = () => el('span', { class: 'sp-mark' },
   el('img', { class: 'sp-white', src: '/spotify-white.svg', alt: 'Spotify' }),
   el('img', { class: 'sp-black', src: '/spotify-black.svg', alt: 'Spotify' }));
 const soundcloudMark = link => {
-  const img = el('img', { src: '/soundcloud.png', alt: t('scLogo') });
-  return link ? el('a', { class: 'sc-mark', href: 'https://soundcloud.com', target: '_blank', rel: 'noopener noreferrer' }, img)
-    : el('span', { class: 'sc-mark' }, img);
+  const imgs = [el('img', { class: 'sc-white', src: '/soundcloud-white.png', alt: t('scLogo') }),
+    el('img', { class: 'sc-black', src: '/soundcloud-black.png', alt: t('scLogo') })];
+  return link ? el('a', { class: 'sc-mark', href: 'https://soundcloud.com', target: '_blank', rel: 'noopener noreferrer' }, imgs)
+    : el('span', { class: 'sc-mark' }, imgs);
 };
 // A service in the big tiles and the Services list. YouTube's rules allow its logo only at 100 px or more
 // and forbid copying its lettering, so it is its name in our own font.

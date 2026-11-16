@@ -151,8 +151,9 @@ textarea.link-input.multi { border-radius: 22px; }
 .tile .sp-mark img, .conn-name .sp-mark img { width: 110px; }
 .conn-name .sp-mark { margin-left: -15px; }   /* logo lines up with the names below; its clear space stays empty */
 .tile .sc-mark, .conn-name .sc-mark { padding: 9px 13px; }
-.tile .sc-mark img { width: 100px; }   /* badge 126 px: fits a tile just above the phone width (about 145 px) */
-.conn-name .sc-mark img { width: 110px; }
+.conn-name .sc-mark { margin-left: -13px; }   /* lines up with the names below, like the Spotify logo */
+/* 150 px with its space: fits a tile just above the phone width (156 px). Without the badge a smaller logo looked lost. */
+.tile .sc-mark img, .conn-name .sc-mark img { width: 124px; }
 .plan-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .plan-card { display: grid; gap: 6px; padding: 16px; text-decoration: none; }
 .plan-card:hover { border-color: var(--accent); }
@@ -295,7 +296,7 @@ button.stat:hover { transform: translateY(-1px); }
   .tile .sp-mark { padding: 10px; }
   .tile .sp-mark img { width: 70px; }
   .tile .sc-mark { padding: 7px 8px; }
-  .tile .sc-mark img { width: 72px; }
+  .tile .sc-mark img { width: 76px; }   /* 92 px with its space: a 360 px phone's tile is 93 px */
   .tile .svc-name { font-size: 0.95rem; }   /* the crossed-out "SoundCloud" fits a 360 px phone */
   .apply-bar { bottom: 8px; padding: 10px 12px; }
   .apply-bar .btn.primary { flex: 1 1 100%; white-space: normal; }
@@ -308,11 +309,12 @@ button.stat:hover { transform: translateY(-1px); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 /* Official service marks: only beside the service's own name or data. */
-.sc-mark { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 6px; background: #121212; justify-self: start; }
+/* SoundCloud: no badge since 16 Nov 2026; its rule is light logo on dark, dark logo on light. */
+.sc-mark { display: inline-flex; align-items: center; padding: 6px 10px; justify-self: start; }
 .sc-mark img { display: block; width: 90px; height: auto; }
 .sp-mark { display: inline-flex; align-items: center; padding: 12px; }   /* clear space: half the icon height */
 .sp-mark img { display: block; width: 84px; height: auto; }
-[data-theme="glass"] .sp-black, [data-theme="glass-light"] .sp-white { display: none; }
+[data-theme="glass"] :is(.sp-black, .sc-black), [data-theme="glass-light"] :is(.sp-white, .sc-white) { display: none; }
 .conn-hint { flex-basis: 100%; margin: 0; }
 .setup-steps a { overflow-wrap: anywhere; color: var(--accent); }
 .route .sp-mark { vertical-align: middle; }
