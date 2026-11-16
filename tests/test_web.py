@@ -78,7 +78,7 @@ class Mascot(unittest.TestCase):
         page = (WEB / 'app.js').read_text(encoding='utf-8')
         asked = set(re.findall(r"\btip\('(\w+)'", page)) | set(re.findall(r"Mascot\.node\('(\w+)'", page))
         self.assertGreaterEqual(len(asked), 6)
-        self.assertEqual(sorted(asked - set(mascot_poses())), [])
+        self.assertEqual(sorted(asked), sorted(mascot_poses()))   # and the file carries no unused pose
 
     def test_the_mascot_never_writes_markup_or_style_attributes(self):
         for name in ('mascot.js', 'app.js'):

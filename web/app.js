@@ -482,12 +482,16 @@ function jobCard(job) {
     signin,
     el('div', { class: 'bar', role: 'progressbar', 'aria-valuenow': share, 'aria-valuemin': 0, 'aria-valuemax': 100 },
       el('span', { style: `width:${job.total ? share : 4}%` })),
-    tip('jump', progress, el('p', { class: job.total ? 'job-count' : 'job-wait', text: progress })),
+    // one mascot per screen: while the sign-in card waits, it is the one talking
+    signin ? el('p', { class: job.total ? 'job-count' : 'job-wait', text: progress })
+      : tip('jump', progress, el('p', { class: job.total ? 'job-count' : 'job-wait', text: progress })),
     el('p', { class: 'job-line', text: job.lines[job.lines.length - 1] || '' }));
 }
 
 // Spotify ignores "public: false" from apps and opens any playlist by its link (tested 14 Nov 2026).
-const spotifyNote = () => S.plan.to === 'spotify' && el('p', { class: 'hint', text: t('spotifyPublic') });
+const spotifyNote = () => S.plan.to === 'spotify' && tip('think', t('tipSpotify'), t('spotifyPublic'));
+// The transfer button's name; the mascot's "press …" quotes the same text.
+const applyLabel = () => S.plan.applied ? t('addNew') : S.plan.to === 'spotify' ? t('createPlaylist') : t('createPrivate');
 
 function resultCard(job) {
   const result = job.result;
@@ -495,13 +499,15 @@ function resultCard(job) {
   return el('div', { class: 'card done' },
     el('h2', { text: t('done') }),
     el('p', { text: t('addedLine', result) }),
-    spotifyNote(),
+    !result.skipped.length && tip('celebrate', t('tipDone')),
+    // one mascot per screen: the Spotify heads-up was the mascot's in the dialog, here it is the grey line
+    S.plan.to === 'spotify' && el('p', { class: 'hint', text: t('spotifyPublic') }),
     link ? el('a', { class: 'btn primary', href: link, target: '_blank', rel: 'noopener noreferrer', text: t('openPlaylist') })
          : S.state.demo && el('p', { class: 'hint', text: t('demoNoPlaylist') }),
     result.skipped.length > 0 && el('div', { class: 'skipped' },
       el('h3', { text: t('couldNotAdd', { count: result.skipped.length }) }),
       el('ul', {}, result.skipped.map(([song, reason]) => el('li', {}, el('b', { text: song }), ' — ' + reason))),
-      el('p', { class: 'hint', text: t('pickAnother') })));
+      tip('shrug', t('tipSkipped'), t('pickAnother'))));
 }
 
 async function startCheck() {
@@ -674,6 +680,8 @@ function drawPlan() {
     ? job.result.unavailable.filter(({ index, id }) => tracks[index] && ['auto', 'ok'].includes(statusOf(tracks[index]))
       && videoIdOf(tracks[index]) === id) : null;
 
+  // an error or result card above has its own mascot; one mascot per screen
+  const cardShown = job && (job.state === 'error' || job.state === 'done' && job.kind === 'apply' && job.result);
   view.replaceChildren(el('div', { class: 'plan' }, back,
     el('header', { class: 'plan-head' },
       el('h1', { text: S.plan.title || S.plan.name }),
@@ -689,6 +697,10 @@ function drawPlan() {
         el('button', { class: 'stat ' + tone, type: 'button', 'aria-pressed': String(S.filter === id),
           onclick() { S.filter = S.filter === id ? 'all' : id; drawPlan(); } },
           el('b', { text: number }), el('span', { text })))),
+    // under the counters: what to do next on this screen (nothing here when tips are hidden)
+    cardShown ? null : counts.ask > 0 ? ([...S.open].some(index => tracks[index] && statusOf(tracks[index]) === 'ask')
+        ? tip('listen', t('tipListen', { listen: t('listen') })) : tip('point_up', t('tipReview')))
+      : going > 0 && !S.plan.applied && tip('jump', t('tipAllSet', { button: applyLabel() })),
     el('div', { class: 'chips' }, el('button', { class: 'chip', type: 'button', 'aria-pressed': String(S.filter === 'all'),
       onclick() { S.filter = 'all'; drawPlan(); } }, t('fAll'), el('span', { class: 'chip-count', text: tracks.length }))),
     el('div', { class: 'rows' }, rows.length ? rows
@@ -699,7 +711,7 @@ function drawPlan() {
       S.plan.applied && safeLink(S.plan.target_url) && el('a', { class: 'btn ghost', href: safeLink(S.plan.target_url),
         target: '_blank', rel: 'noopener noreferrer', text: t('playlistLink') }),
       el('button', { class: 'btn primary', type: 'button', disabled: !going,
-        text: S.plan.applied ? t('addNew') : S.plan.to === 'spotify' ? t('createPlaylist') : t('createPrivate'),
+        text: applyLabel(),
         onclick: () => confirmApply(going, counts.ask) }))));
 }
 
