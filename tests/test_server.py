@@ -73,7 +73,8 @@ class ServerCase(unittest.TestCase):
         return status, (json.loads(raw) if path.startswith('/api/') else raw.decode())
 
     def wait(self):
-        for _ in range(400):
+        deadline = time.monotonic() + 30   # by time, not by count: CI machines are several times slower
+        while time.monotonic() < deadline:
             job = self.call('/api/state')[1]['job']
             if job['state'] != 'running':
                 return job

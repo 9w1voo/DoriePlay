@@ -13,6 +13,7 @@ label, and used only when one of them is a confident match; otherwise YouTube is
 Stdlib only. Not checked: whether the linked videos still exist ("Check the videos" on the plan does).
 """
 import argparse
+import contextlib
 import gzip
 import json
 import os
@@ -109,7 +110,6 @@ def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1', limit=LIMIT_PER_HOUR)
     count is kept in memory only, and all counts are dropped every hour. Plain HTTP on 127.0.0.1: on a
     public server a proxy on the same machine (Caddy) adds HTTPS, and the address is then the last
     X-Forwarded-For entry, the one that proxy added."""
-    local = threading.local()
     counts, window, lock = {}, [time.monotonic()], threading.Lock()
 
     def allowed(address):
@@ -120,10 +120,8 @@ def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1', limit=LIMIT_PER_HOUR)
             counts[address] = counts.get(address, 0) + 1
             return counts[address] <= limit
 
-    def database():
-        if not hasattr(local, 'db'):
-            local.db = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, check_same_thread=False)
-        return local.db
+    def database():   # one per request, closed before answering: every request has its own thread anyway,
+        return contextlib.closing(sqlite3.connect(f'file:{db_path}?mode=ro', uri=True))   # and Windows cannot replace an open file
 
     class Handler(BaseHTTPRequestHandler):
         server_version = 'DorieSongBase'
@@ -152,9 +150,10 @@ def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1', limit=LIMIT_PER_HOUR)
                 return
             if self.path != '/v1/health':
                 return self.answer(404, {'error': 'Not found.'})
-            db = database()
-            meta = dict(db.execute('SELECT key, value FROM meta'))
-            self.answer(200, {'videos': db.execute('SELECT count(*) FROM video').fetchone()[0], **meta})
+            with database() as db:
+                meta = dict(db.execute('SELECT key, value FROM meta'))
+                videos = db.execute('SELECT count(*) FROM video').fetchone()[0]
+            self.answer(200, {'videos': videos, **meta})
 
         def do_POST(self):
             if self.refused():
@@ -172,7 +171,9 @@ def serve(db_path=DEFAULT_DB, port=8771, host='127.0.0.1', limit=LIMIT_PER_HOUR)
                 assert isinstance(track, dict) and _text(track.get('title'))
             except (ValueError, AssertionError):
                 return self.answer(400, {'error': 'Send {"title", "artists", "duration_ms"}.'})
-            self.answer(200, {'candidates': match(database(), track)})
+            with database() as db:
+                candidates = match(db, track)
+            self.answer(200, {'candidates': candidates})
 
     class Server(ThreadingHTTPServer):
         def handle_error(self, request, client_address):   # privacy: an error must not write the address or the request to the journal

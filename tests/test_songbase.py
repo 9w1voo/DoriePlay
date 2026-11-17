@@ -91,6 +91,19 @@ class Server(Base):
                 self.assertEqual(json.loads(response.read())['videos'], 2)
         self.assertEqual(log.getvalue(), '')   # no addresses or song names written anywhere
 
+    def test_every_request_closes_its_database(self):
+        # Windows cannot delete a database file that is still open (the base is replaced by a rebuild)
+        opened, connect = [], songbase.sqlite3.connect
+        url = self.start_server()
+        with mock.patch.object(songbase.sqlite3, 'connect', lambda *a, **k: opened.append(connect(*a, **k)) or opened[-1]):
+            self.assertEqual(self.post(url + '/v1/match', MACHO)[0], 200)
+            with urllib.request.urlopen(url + '/v1/health', timeout=5) as response:
+                self.assertEqual(response.status, 200)
+        self.assertEqual(len(opened), 2)
+        for db in opened:
+            with self.assertRaises(songbase.sqlite3.ProgrammingError):   # "Cannot operate on a closed database"
+                db.execute('SELECT 1')
+
     def test_a_broken_request_writes_nothing(self):
         url = self.start_server()
         with contextlib.redirect_stderr(io.StringIO()) as log, warnings.catch_warnings():
