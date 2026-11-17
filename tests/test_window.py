@@ -99,7 +99,7 @@ class Window(unittest.TestCase):
         line = []
         reader = threading.Thread(target=lambda: line.append(child.stdout.readline()), daemon=True)
         reader.start()
-        reader.join(30)
+        reader.join(120)   # a CI Mac needed more than 30 s for the first start (imports compiled then)
         self.assertTrue(line and line[0].startswith('http://127.0.0.1:'), line)
         page = urllib.request.urlopen(line[0].strip(), timeout=10).read().decode()
         self.assertIn('name="dorie-token"', page)

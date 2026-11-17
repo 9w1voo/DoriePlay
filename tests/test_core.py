@@ -442,3 +442,29 @@ class DataFolder(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Save(unittest.TestCase):
+    def test_a_file_held_open_for_a_moment_is_replaced_once_it_is_free(self):
+        # Windows refuses to replace a file another thread is reading (the page asking for the state) or an
+        # antivirus is scanning; a plan or the search cache must still be saved, not end the search with an error
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        target = Path(folder.name) / 'plan.json'
+        replace, refusals = Path.replace, [PermissionError(13, 'Access is denied')] * 2
+
+        def busy(self, path):
+            if refusals:
+                raise refusals.pop()
+            return replace(self, path)
+
+        with mock.patch.object(Path, 'replace', busy), mock.patch.object(dorieplay.time, 'sleep'):
+            dorieplay.save(target, {'name': 'x'})
+        self.assertEqual(json.loads(target.read_text(encoding='utf-8')), {'name': 'x'})
+
+    def test_a_file_that_stays_locked_still_fails(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        with mock.patch.object(Path, 'replace', side_effect=PermissionError(13, 'Access is denied')), \
+                mock.patch.object(dorieplay.time, 'sleep'), self.assertRaises(PermissionError):
+            dorieplay.save(Path(folder.name) / 'plan.json', {})

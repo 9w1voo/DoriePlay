@@ -84,7 +84,8 @@ class ServerCase(unittest.TestCase):
     def planned(self):
         status, job = self.call('/api/plans', {'url': LINK, 'to': 'youtube'})
         self.assertEqual(status, 200)
-        self.assertEqual(self.wait()['state'], 'done')
+        finished = self.wait()
+        self.assertEqual(finished['state'], 'done', finished.get('error'))
         return job['plan']
 
 
@@ -285,7 +286,8 @@ class Flow(ServerCase):
         songs = '\n'.join(f'Артист {n} - Пісня номер {n}' for n in range(1, 401))   # longer than a link may be
         status, job = self.call('/api/plans', {'url': songs, 'to': 'youtube'})
         self.assertEqual(status, 200)
-        self.assertEqual(self.wait()['state'], 'done')
+        finished = self.wait()
+        self.assertEqual(finished['state'], 'done', finished.get('error'))
         plan = self.call(f"/api/plans/{job['plan']}")[1]
         self.assertEqual((plan['from'], plan['to'], len(plan['tracks'])), ('text', 'youtube', 400))
         self.assertEqual(plan['tracks'][0]['artists'], ['Артист 1'])

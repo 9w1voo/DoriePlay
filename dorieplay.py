@@ -28,7 +28,13 @@ def save(path, data):
     path = Path(path)
     temp = path.with_suffix(path.suffix + '.tmp')
     temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
-    temp.replace(path)
+    for wait in (0.05, 0.1, 0.2, 0.4, 0.8, None):
+        try:
+            return temp.replace(path)
+        except PermissionError:   # Windows: someone is reading the file (the page, an antivirus) for a moment
+            if wait is None:
+                raise
+            time.sleep(wait)
 
 
 def settings():
